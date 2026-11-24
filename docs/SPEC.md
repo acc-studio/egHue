@@ -277,6 +277,9 @@ it up on their own.
 | Automations: wake up, bedtime, timers, timed scenes | ✅ Full view, stored on the bridge; sleep timer in every room |
 | Hue Sync, entertainment areas | ❌ Out of scope |
 | Control away from home | ❌ Local only for now (needs Hue Remote API credentials; possible later) |
+| Light effects (candle, fire, sparkle, …), blink to identify | ✅ Full view |
+| Renaming lights, rooms, zones; fixture type | ✅ Full view |
+| Sensors: motion, temperature, light level, contact, battery | ✅ Devices tab; motion on/off |
 | Adding new lights to the bridge | ❌ Use the Hue app |
 
 ## 11. Platform

@@ -78,10 +78,12 @@ private fun AppRoot(c: AppContainer) {
                 SettingsScreen(c, onBack = { screen = "home" }, onOpenRemote = { screen = "remote:$it" })
             }
             else -> if (s.startsWith("remote:")) {
-                BackHandler { screen = "settings" }
-                RemoteScreen(c, s.removePrefix("remote:"), onBack = { screen = "settings" })
+                // Remotes open from Settings, or from the Devices tab ("|home").
+                val back = if (s.endsWith("|home")) "home" else "settings"
+                BackHandler { screen = back }
+                RemoteScreen(c, s.removePrefix("remote:").removeSuffix("|home"), onBack = { screen = back })
             } else if (viewMode == ViewMode.FULL) {
-                FullApp(c, onOpenSettings = { screen = "settings" })
+                FullApp(c, onOpenSettings = { screen = "settings" }, onOpenRemote = { screen = "remote:$it|home" })
             } else HomeScreen(c, onOpenSettings = { screen = "settings" })
         }
     }

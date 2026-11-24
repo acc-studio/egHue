@@ -76,6 +76,8 @@ def build_state():
             o["color"] = {"xy": {"x": 0.4573, "y": 0.41}, "gamut_type": "C",
                           "gamut": {"red": {"x": 0.6915, "y": 0.3083}, "green": {"x": 0.17, "y": 0.7},
                                     "blue": {"x": 0.1532, "y": 0.0475}}}
+            o["effects"] = {"status": "no_effect", "status_values": ["no_effect", "candle", "fire", "prism", "sparkle", "opal", "glisten"],
+                            "effect_values": ["no_effect", "candle", "fire", "prism", "sparkle", "opal", "glisten"]}
         add(o)
         lights[name] = (dev_id, light_id)
         return dev_id, light_id
@@ -140,6 +142,26 @@ def build_state():
           lambda i: {"on": {"on": True}, "dimming": {"brightness": 25.0}, "color": {"xy": [{"x": 0.16, "y": 0.1}, {"x": 0.3, "y": 0.14}, {"x": 0.17, "y": 0.06}][i]}})
     for gl in [o for o in res if o["type"] == "grouped_light"]:
         recompute_group(gl["id"])
+
+    # A Hue motion sensor (SML001) in the hallway.
+    dev_id, zb_id, pw_id, mo_id, te_id, ll_id = rid(), rid(), rid(), rid(), rid(), rid()
+    add({"id": dev_id, "type": "device", "id_v1": "/sensors/5", "metadata": {"name": "Hallway sensor", "archetype": "unknown_archetype"},
+         "product_data": {"model_id": "SML001", "product_name": "Hue motion sensor"},
+         "services": [{"rid": zb_id, "rtype": "zigbee_connectivity"}, {"rid": pw_id, "rtype": "device_power"},
+                      {"rid": mo_id, "rtype": "motion"}, {"rid": te_id, "rtype": "temperature"}, {"rid": ll_id, "rtype": "light_level"}]})
+    add({"id": zb_id, "type": "zigbee_connectivity", "owner": {"rid": dev_id, "rtype": "device"}, "status": "connected"})
+    add({"id": pw_id, "type": "device_power", "owner": {"rid": dev_id, "rtype": "device"}, "power_state": {"battery_level": 64}})
+    add({"id": mo_id, "type": "motion", "owner": {"rid": dev_id, "rtype": "device"}, "enabled": True,
+         "motion": {"motion": False, "motion_valid": True, "motion_report": {"changed": "2026-11-24T20:01:00.000Z", "motion": False}}})
+    add({"id": te_id, "type": "temperature", "owner": {"rid": dev_id, "rtype": "device"}, "enabled": True,
+         "temperature": {"temperature": 21.37, "temperature_valid": True}})
+    add({"id": ll_id, "type": "light_level", "owner": {"rid": dev_id, "rtype": "device"}, "enabled": True,
+         "light": {"light_level": 18000, "light_level_valid": True}})
+    bridge_dev = rid()
+    add({"id": bridge_dev, "type": "device", "metadata": {"name": "Fake Hue Bridge", "archetype": "bridge_v2"},
+         "product_data": {"model_id": "BSB002", "product_name": "Hue Bridge", "software_version": "1.67.1967054020"},
+         "services": []})
+    add({"id": rid(), "type": "bridge", "owner": {"rid": bridge_dev, "rtype": "device"}, "bridge_id": BRIDGE_ID.lower()})
 
     # A Hue dimmer switch (RWL022) with the factory button setup, as v1 rules on the living room.
     dev_id, zb_id, pw_id = rid(), rid(), rid()
@@ -218,6 +240,12 @@ def apply_light(light, body):
             light["color_temperature"]["mirek"] = None
             light["color_temperature"]["mirek_valid"] = False
             changed["color_temperature"] = {"mirek": None, "mirek_valid": False}
+    if "effects" in body and "effects" in light:
+        light["effects"]["status"] = body["effects"].get("effect", "no_effect")
+        changed["effects"] = {"status": light["effects"]["status"]}
+    if "metadata" in body:
+        light["metadata"].update(body["metadata"])
+        changed["metadata"] = light["metadata"]
     if "powerup" in body:
         kind = "color" if "color" in light else ("ct" if "color_temperature" in light else "dim")
         light["powerup"] = powerup_state(body["powerup"], kind)
@@ -366,6 +394,18 @@ def handle_put(rtype, rid_, body):
             if ch:
                 updates.append({"id": l["id"], "type": "light", "owner": l["owner"], **ch})
         affected_groups = {g["id"] for g in state.values() if g["type"] == "grouped_light"}
+    elif rtype == "device":
+        d = state[rid_]
+        if "identify" in body:
+            print("identify", d["metadata"]["name"], flush=True)
+        if "metadata" in body:
+            d["metadata"].update(body["metadata"])
+            updates.append({"id": rid_, "type": "device", "metadata": d["metadata"]})
+    elif rtype in ("motion", "temperature", "light_level"):
+        o = state[rid_]
+        if "enabled" in body:
+            o["enabled"] = bool(body["enabled"])
+            updates.append({"id": rid_, "type": rtype, "enabled": o["enabled"]})
     elif rtype == "scene":
         s = state[rid_]
         changed = {}

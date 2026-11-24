@@ -11,6 +11,29 @@ The app has two faces:
 
 ---
 
+## Iteration 4 · v0.7.0 · Devices, effects and housekeeping
+
+**Why:** a complete app covers more than lights and scenes: sensors, finding a bulb, naming
+things, and the effects newer bulbs can play.
+
+**What changed**
+- **Devices tab** (Full): every light (status, effect, colour dot), every sensor, every remote, and the
+  bridge (model, address, software version).
+- **Sensors:** motion (with "last 12 min ago"), temperature, light level in lux, door/window
+  contact, battery. Motion detection can be switched off and on.
+- **Light extras** in the light sheet (Full view): **effects** the bulb supports (candle, fire,
+  prism, sparkle, opal, glisten and others), **Blink** to find a bulb, **Rename**, and
+  **Fixture type** (which also decides the light's role in presets; the sheet says which).
+- **Room extras** (Full): rename a room or zone.
+- Remotes open from the Devices tab too, and Back returns there.
+
+**Verified** on the emulator against the fake bridge (now with effects, a motion sensor and a
+bridge device): Devices tab, Candle effect (light PUT), Blink (device identify). Unit tests: effects,
+device and product name on lights, sensor readings (motion, temperature, lux maths, battery).
+56 tests.
+
+---
+
 ## Iteration 3 · v0.6.0 · Automations
 
 **Why:** a Hue app isn't complete without waking up to light and lights that go off by themselves.

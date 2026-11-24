@@ -478,6 +478,55 @@ class HueRepository(
         persistRequests.tryEmit(Unit)
     }
 
+    // ---- Devices --------------------------------------------------------------------------------
+
+    /** Writes [body] to a resource and keeps it locally. */
+    private suspend fun write(what: String, type: String, id: String, body: JsonObject): Boolean = sceneOp(what) { t ->
+        client.put(t, type, id, body)
+        commitToServer(mapOf(id to body))
+        true
+    } ?: false
+
+    /** Renames a light (and its device, which is what the Hue app shows). */
+    suspend fun renameLight(lightId: String, name: String): Boolean {
+        val l = _home.value.light(lightId) ?: return false
+        val body = buildJsonObject { putJsonObject("metadata") { put("name", name) } }
+        val ok = l.deviceId?.let { write("rename the light", "device", it, body) } ?: true
+        return ok && write("rename the light", "light", lightId, body)
+    }
+
+    /** Sets a light's fixture type (archetype), which also decides its role in presets. */
+    suspend fun setLightArchetype(lightId: String, archetype: String): Boolean {
+        val l = _home.value.light(lightId) ?: return false
+        val body = buildJsonObject { putJsonObject("metadata") { put("archetype", archetype) } }
+        l.deviceId?.let { write("change the fixture type", "device", it, body) }
+        return write("change the fixture type", "light", lightId, body)
+    }
+
+    suspend fun renameGroup(groupId: String, name: String): Boolean {
+        val g = _home.value.group(groupId) ?: return false
+        val body = buildJsonObject { putJsonObject("metadata") { put("name", name) } }
+        return write("rename it", if (g.kind == GroupKind.ZONE) "zone" else "room", groupId, body)
+    }
+
+    /** Makes the light blink so you can find it. */
+    fun identify(lightId: String) {
+        val dev = _home.value.light(lightId)?.deviceId ?: return
+        scope.launch { sceneOp("blink the light") { t -> client.put(t, "device", dev, IDENTIFY_BODY) } }
+    }
+
+    /** Plays [effect] ("candle", "fire", …) on a light, or stops it with null. */
+    fun setEffect(lightId: String, effect: String?) {
+        val body = buildJsonObject {
+            if (effect != null) putJsonObject("on") { put("on", true) }
+            putJsonObject("effects") { put("effect", effect ?: "no_effect") }
+        }
+        lightCommand(lightId, body, buildJsonObject { putJsonObject("effects") { put("status", effect ?: "no_effect") } })
+    }
+
+    suspend fun setMotionEnabled(motionId: String, enabled: Boolean): Boolean =
+        write("change the sensor", "motion", motionId, buildJsonObject { put("enabled", enabled) })
+
     // ---- Automations (bridge schedules) ---------------------------------------------------------
 
     private val _automations = MutableStateFlow<List<Automation>>(emptyList())
@@ -836,5 +885,6 @@ class HueRepository(
         const val KIND_GROUP = "g"
         const val KIND_LIGHT = "l"
         private const val OVERLAY_MS = 1_500L
+        private val IDENTIFY_BODY = buildJsonObject { putJsonObject("identify") { put("action", "identify") } }
     }
 }

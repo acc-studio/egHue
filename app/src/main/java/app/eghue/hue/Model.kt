@@ -27,6 +27,33 @@ data class LightUi(
     val powerOn: PowerOn? = null,
     /** Legacy (v1) id, e.g. "/lights/3"; used for remote rules. */
     val idV1: String? = null,
+    /** The device this light belongs to (for identify, product details). */
+    val deviceId: String? = null,
+    val productName: String? = null,
+    /** Effects the light can play ("candle", "fire", …), without "no_effect". */
+    val effects: List<String> = emptyList(),
+    /** The effect playing now, or null. */
+    val effect: String? = null,
+)
+
+/** A sensor device: motion, temperature, light level and/or contact readings. */
+data class SensorUi(
+    /** Device id. */
+    val id: String,
+    val name: String,
+    val productName: String?,
+    val battery: Int?,
+    val reachable: Boolean,
+    /** Motion service id, if any (for enabling/disabling). */
+    val motionId: String? = null,
+    val motion: Boolean? = null,
+    val motionEnabled: Boolean = true,
+    val motionChanged: String? = null,
+    val temperature: Double? = null,
+    /** Lux. */
+    val lux: Double? = null,
+    /** True when closed, for door/window contacts. */
+    val contactClosed: Boolean? = null,
 )
 
 /** Hue "power-on behaviour" (`powerup`). Custom values are only meaningful for [PowerOn.CUSTOM]. */
@@ -100,6 +127,8 @@ data class SceneUi(
     val retired: Boolean = false,
 )
 
+data class BridgeUi(val name: String?, val model: String?, val software: String?)
+
 data class HomeUi(
     val rooms: List<GroupUi>,
     val zones: List<GroupUi>,
@@ -107,6 +136,8 @@ data class HomeUi(
     val scenes: Map<String, List<SceneUi>>,
     val homeGroupedLightId: String?,
     val remotes: List<RemoteUi> = emptyList(),
+    val sensors: List<SensorUi> = emptyList(),
+    val bridge: BridgeUi? = null,
 ) {
     private val lightIndex: Map<String, LightUi> by lazy { lights.associateBy { it.id } }
     private val groupIndex: Map<String, GroupUi> by lazy { (rooms + zones).associateBy { it.id } }
@@ -128,6 +159,7 @@ private val nameOrder: Comparator<String> = String.CASE_INSENSITIVE_ORDER
 /** Builds the UI model from raw CLIP v2 resources. Pure and cheap; runs on every state change. */
 fun deriveHome(resources: Collection<JsonObject>): HomeUi {
     val byType = resources.groupBy { it.str("type") ?: "" }
+    val byId = resources.associateBy { it.str("id") ?: "" }
     fun ofType(t: String) = byType[t].orEmpty()
 
     val devices = ofType("device").mapNotNull { d -> d.str("id")?.let { it to d } }.toMap()
@@ -223,7 +255,42 @@ fun deriveHome(resources: Collection<JsonObject>): HomeUi {
         )
     }.sortedWith(compareBy(nameOrder) { it.name })
 
-    return HomeUi(rooms, zones, lights, scenes, homeGl, remotes)
+    val sensors = devices.values.mapNotNull { d ->
+        val id = d.str("id") ?: return@mapNotNull null
+        val svc = d.refs("services").associateBy({ it.rid }, { it.rtype })
+        fun of(type: String) = svc.filterValues { it == type }.keys.firstNotNullOfOrNull { rid -> byId[rid] }
+        val motion = of("motion") ?: of("convenience_area_motion")
+        val temp = of("temperature")
+        val level = of("light_level")
+        val contact = of("contact")
+        if (motion == null && temp == null && level == null && contact == null) return@mapNotNull null
+        SensorUi(
+            id = id,
+            name = d.obj("metadata")?.str("name") ?: "Sensor",
+            productName = d.obj("product_data")?.str("product_name"),
+            battery = batteries[id],
+            reachable = connected[id] ?: true,
+            motionId = motion?.str("id"),
+            motion = motion?.obj("motion")?.let { m -> m.obj("motion_report")?.bool("motion") ?: m.bool("motion") },
+            motionEnabled = motion?.bool("enabled") ?: true,
+            motionChanged = motion?.obj("motion")?.obj("motion_report")?.str("changed"),
+            temperature = temp?.obj("temperature")?.let { t -> t.obj("temperature_report")?.dbl("temperature") ?: t.dbl("temperature") },
+            lux = level?.obj("light")?.let { l -> l.obj("light_level_report")?.int("light_level") ?: l.int("light_level") }
+                ?.let { Math.pow(10.0, (it - 1) / 10_000.0) },
+            contactClosed = contact?.obj("contact_report")?.str("state")?.let { it == "contact" },
+        )
+    }.sortedWith(compareBy(nameOrder) { it.name })
+
+    val bridge = ofType("bridge").firstOrNull()?.let { b ->
+        val dev = b.ref("owner")?.rid?.let { devices[it] }
+        BridgeUi(
+            name = dev?.obj("metadata")?.str("name"),
+            model = dev?.obj("product_data")?.str("product_name"),
+            software = dev?.obj("product_data")?.str("software_version"),
+        )
+    }
+
+    return HomeUi(rooms, zones, lights, scenes, homeGl, remotes, sensors, bridge)
 }
 
 private fun deriveLight(l: JsonObject, devices: Map<String, JsonObject>, connected: Map<String, Boolean>): LightUi? {
@@ -266,6 +333,11 @@ private fun deriveLight(l: JsonObject, devices: Map<String, JsonObject>, connect
         color = display,
         powerOn = l.obj("powerup")?.let(::parsePowerOn),
         idV1 = l.str("id_v1"),
+        deviceId = ownerId,
+        productName = device?.obj("product_data")?.str("product_name"),
+        effects = l.obj("effects")?.arr("effect_values")?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+            ?.filter { it != "no_effect" }.orEmpty(),
+        effect = l.obj("effects")?.str("status")?.takeIf { it != "no_effect" },
     )
 }
 

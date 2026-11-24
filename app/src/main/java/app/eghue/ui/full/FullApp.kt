@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -34,11 +36,12 @@ enum class FullTab(val label: String, val icon: ImageVector, val selectedIcon: I
     HOME("Home", Icons.Outlined.Home, Icons.Rounded.Home),
     SCENES("Scenes", Icons.Outlined.AutoAwesome, Icons.Rounded.AutoAwesome),
     AUTOMATIONS("Automations", Icons.Outlined.Schedule, Icons.Rounded.Schedule),
+    DEVICES("Devices", Icons.Outlined.Devices, Icons.Rounded.Devices),
 }
 
 /** The full view: the Lite home screen plus tabs for everything else. */
 @Composable
-fun FullApp(c: AppContainer, onOpenSettings: () -> Unit) {
+fun FullApp(c: AppContainer, onOpenSettings: () -> Unit, onOpenRemote: (String) -> Unit) {
     var tab by rememberSaveable { mutableStateOf(FullTab.HOME) }
     // "edit:<groupId>:<sceneId or 'new'>" (scene editor) or "auto:<id or 'new'>" (automation editor).
     var editor by rememberSaveable { mutableStateOf<String?>(null) }
@@ -80,6 +83,7 @@ fun FullApp(c: AppContainer, onOpenSettings: () -> Unit) {
             when (tab) {
                 FullTab.HOME -> HomeScreen(c, onOpenSettings = onOpenSettings, onEditScene = editScene)
                 FullTab.SCENES -> ScenesScreen(c, onOpenSettings = onOpenSettings, onEdit = editScene, onNew = { openEditor(it, null) })
+                FullTab.DEVICES -> DevicesScreen(c, onOpenSettings = onOpenSettings, onOpenRemote = onOpenRemote)
                 FullTab.AUTOMATIONS -> AutomationsScreen(c, onOpenSettings = onOpenSettings, onEdit = { editor = "auto:${it ?: "new"}" })
             }
         }

@@ -89,6 +89,8 @@ fun DetailSheet(
     onNavigate: (String?) -> Unit,
     /** Full view: opens the scene editor. */
     onEditScene: ((String) -> Unit)? = null,
+    /** Full view: show advanced controls (effects, rename, fixture type, identify). */
+    full: Boolean = onEditScene != null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val current = target.substringBefore('|')
@@ -120,12 +122,12 @@ fun DetailSheet(
         ) {
             when {
                 group != null -> GroupDetail(
-                    group, home, repo,
+                    group, home, repo, full,
                     onOpenLight = { onNavigate("l:$it|g:${group.id}") },
                     onEditScene = onEditScene?.let { f -> { id: String -> onNavigate(null); f(id) } },
                 )
                 light != null -> LightDetail(
-                    light, repo,
+                    light, repo, full,
                     backLabel = back?.let { home.group(it.substring(2))?.name },
                     onBack = { onNavigate(back) },
                 )
@@ -135,7 +137,7 @@ fun DetailSheet(
 }
 
 @Composable
-private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, onOpenLight: (String) -> Unit, onEditScene: ((String) -> Unit)?) {
+private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, full: Boolean, onOpenLight: (String) -> Unit, onEditScene: ((String) -> Unit)?) {
     Header(
         icon = groupIcon(g.archetype, g.kind),
         title = g.name,
@@ -220,10 +222,11 @@ private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, onOpenLig
             }
         }
     }
+    if (full) GroupExtras(g, repo)
 }
 
 @Composable
-private fun LightDetail(l: LightUi, repo: HueRepository, backLabel: String?, onBack: () -> Unit) {
+private fun LightDetail(l: LightUi, repo: HueRepository, full: Boolean, backLabel: String?, onBack: () -> Unit) {
     if (backLabel != null) {
         Row(
             Modifier
@@ -265,6 +268,7 @@ private fun LightDetail(l: LightUi, repo: HueRepository, backLabel: String?, onB
             repo.setPowerOn(listOf(l.id), it); editPowerOn = false
         })
     }
+    if (full) LightExtras(l, repo)
     if (!l.reachable) {
         Text(
             "This light isn't responding. Check that it's powered at the wall switch.",

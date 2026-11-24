@@ -166,6 +166,7 @@ private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, onOpenLig
             repo.setPowerOn(g.lightIds, it); editPowerOn = false
         })
     }
+    g.idV1?.let { v1 -> if (lights.isNotEmpty()) SleepTimerRow(v1, repo) }
     val allScenes = home.scenesFor(g.id)
     if (lights.isNotEmpty()) {
         SectionTitle("Presets")

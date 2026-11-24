@@ -274,7 +274,8 @@ it up on their own.
 | Light/dark/system theme | ✅ Plus Material You |
 | Creating or editing your own scenes | ✅ Save current look, rename, update, delete; full scene editor in Full view |
 | Creating or editing rooms, zones | ❌ Out of scope (do it in the Hue app; egHue picks it up live) |
-| Automations, routines, Hue Sync, entertainment areas | ❌ Out of scope |
+| Automations: wake up, bedtime, timers, timed scenes | ✅ Full view, stored on the bridge; sleep timer in every room |
+| Hue Sync, entertainment areas | ❌ Out of scope |
 | Control away from home | ❌ Local only for now (needs Hue Remote API credentials; possible later) |
 | Adding new lights to the bridge | ❌ Use the Hue app |
 

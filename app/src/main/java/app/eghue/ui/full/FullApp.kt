@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material3.Icon
@@ -31,15 +33,21 @@ import app.eghue.ui.home.HomeScreen
 enum class FullTab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
     HOME("Home", Icons.Outlined.Home, Icons.Rounded.Home),
     SCENES("Scenes", Icons.Outlined.AutoAwesome, Icons.Rounded.AutoAwesome),
+    AUTOMATIONS("Automations", Icons.Outlined.Schedule, Icons.Rounded.Schedule),
 }
 
 /** The full view: the Lite home screen plus tabs for everything else. */
 @Composable
 fun FullApp(c: AppContainer, onOpenSettings: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(FullTab.HOME) }
-    // "edit:<groupId>:<sceneId or 'new'>" while the scene editor is open.
+    // "edit:<groupId>:<sceneId or 'new'>" (scene editor) or "auto:<id or 'new'>" (automation editor).
     var editor by rememberSaveable { mutableStateOf<String?>(null) }
 
+    editor?.takeIf { it.startsWith("auto:") }?.let { route ->
+        BackHandler { editor = null }
+        AutomationEditorScreen(c, route.removePrefix("auto:").takeIf { it != "new" }, onDone = { editor = null })
+        return
+    }
     editor?.let { route ->
         val (groupId, sceneId) = route.removePrefix("edit:").split(':', limit = 2).let { it[0] to it[1].takeIf { s -> s != "new" } }
         BackHandler { editor = null }
@@ -72,6 +80,7 @@ fun FullApp(c: AppContainer, onOpenSettings: () -> Unit) {
             when (tab) {
                 FullTab.HOME -> HomeScreen(c, onOpenSettings = onOpenSettings, onEditScene = editScene)
                 FullTab.SCENES -> ScenesScreen(c, onOpenSettings = onOpenSettings, onEdit = editScene, onNew = { openEditor(it, null) })
+                FullTab.AUTOMATIONS -> AutomationsScreen(c, onOpenSettings = onOpenSettings, onEdit = { editor = "auto:${it ?: "new"}" })
             }
         }
     }

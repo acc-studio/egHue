@@ -252,6 +252,7 @@ def powerup_state(p, kind):
 
 v1_sensors = {}
 v1_rules = {}
+v1_schedules = {}
 next_id = {"n": 100}
 
 
@@ -436,6 +437,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(v1_rules)
                 if what == "sensors":
                     return self.send_json(v1_sensors)
+                if what == "schedules":
+                    return self.send_json(v1_schedules)
                 if what.startswith("rules/") and what[6:] in v1_rules:
                     return self.send_json(v1_rules[what[6:]])
             return self.send_json([{"error": {"type": 3, "address": "/" + what, "description": "resource not available"}}])
@@ -496,6 +499,17 @@ class Handler(BaseHTTPRequestHandler):
                         return self.send_json([{"error": {"type": 7, "address": "/rules", "description": "invalid rule"}}])
                     b.setdefault("status", "enabled")
                     v1_rules[new_id] = b
+                elif what == "schedules":
+                    lt = b.get("localtime", "")
+                    cmd = b.get("command") or {}
+                    if (len(b.get("name", "")) > 32 or len(b.get("description", "")) > 64 or not cmd.get("address")
+                            or not (lt.startswith("W") or lt.startswith("PT") or lt[:2] == "20" or lt.startswith("R"))):
+                        return self.send_json([{"error": {"type": 7, "address": "/schedules", "description": "invalid schedule"}}])
+                    b.setdefault("status", "enabled")
+                    b["created"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+                    if lt.startswith("PT"):
+                        b["starttime"] = b["created"]
+                    v1_schedules[new_id] = b
                 elif what == "sensors":
                     b.setdefault("state", {"status": 0})
                     v1_sensors[new_id] = b
@@ -512,6 +526,12 @@ class Handler(BaseHTTPRequestHandler):
                 if v1_rules.pop(rid_, None) is None:
                     return self.send_json([{"error": {"type": 3, "address": "/rules/" + rid_, "description": "not available"}}])
             return self.send_json([{"success": "/rules/%s deleted" % rid_}])
+        if p.startswith("/api/" + APP_KEY + "/schedules/"):
+            sid = p.rsplit("/", 1)[1]
+            with lock:
+                if v1_schedules.pop(sid, None) is None:
+                    return self.send_json([{"error": {"type": 3, "address": "/schedules/" + sid, "description": "not available"}}])
+            return self.send_json([{"success": "/schedules/%s deleted" % sid}])
         parts = p.split("/")
         if len(parts) == 6 and parts[1] == "clip" and self.authed():
             rtype, rid_ = parts[4], parts[5]
@@ -525,6 +545,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"errors": [{"description": "not found"}]}, 404)
 
     def do_PUT(self):
+        p = self.path.rstrip("/")
+        if p.startswith("/api/" + APP_KEY + "/schedules/"):
+            sid = p.rsplit("/", 1)[1]
+            b = self.body()
+            with lock:
+                if sid not in v1_schedules:
+                    return self.send_json([{"error": {"type": 3, "address": "/schedules/" + sid, "description": "not available"}}])
+                v1_schedules[sid].update(b)
+            return self.send_json([{"success": {"/schedules/%s/%s" % (sid, k): v}} for k, v in b.items()])
         parts = self.path.rstrip("/").split("/")
         if len(parts) == 6 and parts[1] == "clip" and self.authed():
             rtype, rid_ = parts[4], parts[5]

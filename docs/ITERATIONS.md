@@ -11,6 +11,32 @@ The app has two faces:
 
 ---
 
+## Iteration 3 · v0.6.0 · Automations
+
+**Why:** a Hue app isn't complete without waking up to light and lights that go off by themselves.
+
+**What changed**
+- **Automations tab** (Full): lists every schedule on the bridge with an on/off switch, live
+  countdowns for timers, and pull to refresh. Schedules made by other apps are shown read-only.
+- **Editor** with four kinds:
+  - *Wake up:* lights fade up over 5 to 60 min ("sunrise") and are fully up at the chosen time,
+    at a brightness and white (Candle, Warm, Neutral, Daylight) you pick. Fades that start before
+    midnight shift to the previous day correctly.
+  - *Bedtime:* lights fade out over 5 to 60 min from the chosen time.
+  - *Timer:* off after 5 min to 2 h, fading over the last minute.
+  - *At a time:* turn on (brightness and white), turn off, or play one of the room's scenes.
+  - Any room, zone or the whole home; any days (none means once).
+- **Lite addition:** a sleep-timer row in every room's sheet: *Off in 15 / 30 / 60 / 90 min*, then a
+  live *Off in 23 min · Cancel* chip.
+- Everything is stored as bridge schedules (tagged `eghue:<kind>`), so it runs with phones off.
+
+**Verified** on the emulator against the fake bridge (which now speaks v1 schedules): created a
+wake-up (POST, listed as "07:00 · Weekdays · 30 min sunrise to 100%"), started a sleep timer from
+the room sheet (countdown chip shown). Unit tests: wake-up lead time, midnight wrap, bedtime, one-off
+date, timer end time, foreign schedules, name length, day descriptions (54 tests in all).
+
+---
+
 ## Iteration 2 · v0.5.0 · Full view and your own scenes
 
 **Why:** the app could only play scenes. Making and changing scenes is the most-wanted missing

@@ -174,6 +174,17 @@ class HueClient(
         }
     }
 
+    /** PUT /api/<key>/<path>. */
+    suspend fun v1Put(t: Target, path: String, body: JsonObject): Unit = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url("https://${t.host}/api/${t.key}/$path")
+            .put(body.toString().toRequestBody(jsonType)).build()
+        http.newCall(req).await().use { resp ->
+            val arr = runCatching { HueJson.parseToJsonElement(resp.body!!.string()).jsonArray }.getOrNull()
+                ?: throw IOException("HTTP ${resp.code}")
+            if (arr.objects().none { it.containsKey("success") }) throw v1Error(arr)
+        }
+    }
+
     suspend fun v1Delete(t: Target, path: String): Unit = withContext(Dispatchers.IO) {
         val req = Request.Builder().url("https://${t.host}/api/${t.key}/$path").delete().build()
         http.newCall(req).await().use { resp ->

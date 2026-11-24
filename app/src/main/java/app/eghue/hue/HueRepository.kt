@@ -478,6 +478,69 @@ class HueRepository(
         persistRequests.tryEmit(Unit)
     }
 
+    // ---- Automations (bridge schedules) ---------------------------------------------------------
+
+    private val _automations = MutableStateFlow<List<Automation>>(emptyList())
+    /** The bridge's schedules, as of the last [loadAutomations]. */
+    val automations: StateFlow<List<Automation>> = _automations.asStateFlow()
+
+    /** Display name for a legacy address such as "/groups/3". */
+    fun nameOfV1(address: String): String? {
+        if (address == "/groups/0") return "Whole home"
+        val home = _home.value
+        return (home.rooms + home.zones).firstOrNull { it.idV1 == address }?.name
+            ?: home.lights.firstOrNull { it.idV1 == address }?.name
+    }
+
+    suspend fun loadAutomations(): Boolean = sceneOp("load automations") { t ->
+        val all = client.v1Get(t, "schedules")
+        _automations.value = all.entries.mapNotNull { (id, v) ->
+            (v as? JsonObject)?.let { Automations.parse(id, it, ::nameOfV1) }
+        }.sortedWith(compareBy({ it.kind.ordinal }, { it.name.lowercase() }))
+        true
+    } ?: false
+
+    /** Creates an automation, or rewrites [existingId]. */
+    suspend fun saveAutomation(existingId: String?, spec: AutoSpec): Boolean = sceneOp("save the automation") { t ->
+        val body = Automations.toJson(spec, t.key)
+        if (existingId == null) client.v1Post(t, "schedules", body)
+        else client.v1Put(t, "schedules/$existingId", body)
+        loadAutomations()
+        true
+    } ?: false
+
+    suspend fun setAutomationEnabled(id: String, enabled: Boolean): Boolean = sceneOp("change the automation") { t ->
+        _automations.value = _automations.value.map { if (it.id == id) it.copy(enabled = enabled) else it }
+        client.v1Put(t, "schedules/$id", buildJsonObject { put("status", if (enabled) "enabled" else "disabled") })
+        true
+    } ?: run { scope.launch { loadAutomations() }; false }
+
+    suspend fun deleteAutomation(id: String): Boolean = sceneOp("delete the automation") { t ->
+        client.v1Delete(t, "schedules/$id")
+        _automations.value = _automations.value.filterNot { it.id == id }
+        true
+    } ?: false
+
+    /** Switches [targetV1] off in [minutes], replacing any sleep timer already running for it. */
+    suspend fun startSleepTimer(targetV1: String, minutes: Int): Boolean {
+        cancelSleepTimer(targetV1)
+        val spec = AutoSpec(
+            AutoKind.TIMER, targetV1, nameOfV1(targetV1) ?: "lights", AutoAction.Off, AutoWhen.In(minutes),
+            // Fade over the last minute rather than snapping off.
+            fadeMinutes = 1,
+        )
+        return saveAutomation(null, spec)
+    }
+
+    suspend fun cancelSleepTimer(targetV1: String) {
+        sleepTimerFor(targetV1)?.let { deleteAutomation(it.id) }
+    }
+
+    fun sleepTimerFor(targetV1: String): Automation? = _automations.value.firstOrNull {
+        it.kind == AutoKind.TIMER && it.enabled && it.spec?.targetV1 == targetV1 &&
+            (it.endsAt == null || it.endsAt.isAfter(java.time.Instant.now()))
+    }
+
     // ---- Your own scenes -------------------------------------------------------------------------
 
     /** Saves [groupId]'s lights as they are now as a new scene called [name]. Returns its id. */

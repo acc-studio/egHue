@@ -510,10 +510,11 @@ class HueRepository(
     suspend fun widgetToggle(kind: String, id: String, onOptimistic: suspend () -> Unit): Boolean {
         ensureLoaded()
         val t = target() ?: return false
-        val stale = SystemClock.elapsedRealtime() - lastSync > 15_000
+        // Without the app's live stream, state may be old: resync everything (lights included, since
+        // room brightness is derived from them) before deciding what the toggle should do.
+        if (SystemClock.elapsedRealtime() - lastSync > 15_000) withTimeoutOrNull(2_500) { runCatching { refresh(t) } }
         return try {
             if (kind == KIND_LIGHT) {
-                if (stale) withTimeoutOrNull(2_500) { runCatching { client.get(t, "light", id)?.let { commitServer(it) } } }
                 val l = _home.value.light(id) ?: return false
                 val body = if (l.on) onBody(false) else switchOnBody(l, settings.followPowerOn.value)
                 addOverlays(mapOf(id to body))
@@ -521,8 +522,6 @@ class HueRepository(
                 client.put(t, "light", id, body)
                 commitToServer(mapOf(id to body))
             } else {
-                val gl0 = _home.value.group(id)?.groupedLightId ?: return false
-                if (stale) withTimeoutOrNull(2_500) { runCatching { client.get(t, "grouped_light", gl0)?.let { commitServer(it) } } }
                 val g = _home.value.group(id) ?: return false
                 val gl = g.groupedLightId ?: return false
                 val perLight = if (!g.on) switchOnBodies(g) else null
@@ -549,12 +548,6 @@ class HueRepository(
             _widgetError.value = true
             false
         }
-    }
-
-    private fun commitServer(resource: JsonObject) {
-        val id = resource.str("id") ?: return
-        synchronized(lock) { server = server + (id to resource) }
-        publish()
     }
 
     // ---- Snapshot cache -------------------------------------------------------------------------

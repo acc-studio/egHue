@@ -151,8 +151,13 @@ fun deriveHome(resources: Collection<JsonObject>): HomeUi {
         val ml = members.mapNotNull { lightMap[it] }
         val onLights = ml.filter { it.on }
         val on = gl?.obj("on")?.bool("on") ?: onLights.isNotEmpty()
-        val brightness = gl?.obj("dimming")?.dbl("brightness")?.toFloat()
-            ?: onLights.map { it.brightness }.average().takeUnless { it.isNaN() }?.toFloat() ?: 0f
+        // Hue's group brightness is the average of the lights that are on, and 0 while all are off.
+        // Derive it from the lights so a stale group value (e.g. 0 just after switching the group on
+        // without a live event stream) can't win; an off group shows the level it will come back at.
+        fun avg(ls: List<LightUi>) = ls.map { it.brightness }.average().takeUnless { it.isNaN() }?.toFloat()
+        val brightness = avg(onLights)
+            ?: gl?.obj("dimming")?.dbl("brightness")?.toFloat()?.takeIf { it > 0f }
+            ?: avg(ml) ?: 0f
         val ctLights = ml.filter { it.supportsCt }
         val lead = onLights.firstOrNull() ?: ml.firstOrNull()
         return GroupUi(

@@ -73,6 +73,32 @@ class DeriveHomeTest {
         assertEquals(1, room.reachableLights)
     }
 
+    /**
+     * The bridge reports a group's brightness as 0 while all its lights are off. After the group is
+     * switched on (e.g. from the widget, with no live event stream), that stale 0 must not win over
+     * the lights' own brightness.
+     */
+    @Test fun groupSwitchedOnFromOffShowsItsLightsBrightness() {
+        val switchedOn = resources.map { r ->
+            when (r.str("id")) {
+                "gl2" -> deepMerge(r, HueJson.parseToJsonElement("""{"on":{"on":true},"dimming":{"brightness":0.0}}""").jsonObject)
+                else -> r
+            }
+        }
+        assertEquals(45f, deriveHome(switchedOn).group("zone1")!!.brightness)
+    }
+
+    @Test fun offGroupKeepsItsLightsLastBrightness() {
+        val allOff = resources.map { r ->
+            when (r.str("id")) {
+                "l1", "l3" -> deepMerge(r, HueJson.parseToJsonElement("""{"on":{"on":false}}""").jsonObject)
+                "gl2" -> deepMerge(r, HueJson.parseToJsonElement("""{"on":{"on":false},"dimming":{"brightness":0.0}}""").jsonObject)
+                else -> r
+            }
+        }
+        assertEquals(45f, deriveHome(allOff).group("zone1")!!.brightness)
+    }
+
     @Test fun zonesUseLightsDirectly() {
         val zone = home.group("zone1")!!
         assertEquals(GroupKind.ZONE, zone.kind)

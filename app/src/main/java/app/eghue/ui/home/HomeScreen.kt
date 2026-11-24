@@ -61,7 +61,9 @@ import app.eghue.hue.ConnState
 import app.eghue.hue.GroupUi
 import app.eghue.hue.HueRepository
 import app.eghue.hue.LightUi
+import app.eghue.ui.components.BrightnessBar
 import app.eghue.ui.components.ControlTile
+import app.eghue.hue.ColorUtil
 import app.eghue.ui.components.groupIcon
 import app.eghue.ui.components.lightIcon
 import app.eghue.ui.detail.DetailSheet
@@ -73,6 +75,7 @@ import kotlin.math.roundToInt
 fun HomeScreen(c: AppContainer, onOpenSettings: () -> Unit, onEditScene: ((String) -> Unit)? = null) {
     val repo = c.repository
     val viewMode by c.settings.viewMode.collectAsStateWithLifecycle()
+    val showLights by c.settings.showLights.collectAsStateWithLifecycle()
     val home by repo.home.collectAsStateWithLifecycle()
     val conn by repo.connection.collectAsStateWithLifecycle()
     val loaded by repo.loaded.collectAsStateWithLifecycle()
@@ -133,9 +136,29 @@ fun HomeScreen(c: AppContainer, onOpenSettings: () -> Unit, onEditScene: ((Strin
                     item(key = "banner", span = { GridItemSpan(maxLineSpan) }) {
                         ConnectionBanner(conn, onRetry = repo::reconnectNow)
                     }
+                    if (viewMode == ViewMode.FULL && home.homeGroupedLightId != null && home.lights.isNotEmpty()) {
+                        item(key = "all", span = { GridItemSpan(maxLineSpan) }) {
+                            val on = home.lights.filter { it.on }
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    if (on.isEmpty()) "All lights · off" else "All lights · ${on.size} on",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 4.dp),
+                                )
+                                BrightnessBar(
+                                    value = on.map { it.brightness }.average().takeUnless { it.isNaN() }?.toFloat() ?: 0f,
+                                    on = on.isNotEmpty(),
+                                    color = Color(ColorUtil.average(on.map { it.color })),
+                                    enabled = on.isNotEmpty(),
+                                    onChange = repo::setHomeBrightness,
+                                )
+                            }
+                        }
+                    }
                     groupSection("Rooms", home.rooms, repo) { detail = "g:$it" }
                     groupSection("Zones", home.zones, repo) { detail = "g:$it" }
-                    if (home.lights.isNotEmpty()) {
+                    if (home.lights.isNotEmpty() && showLights) {
                         header("lights", "Lights")
                         items(home.lights, key = { "l:" + it.id }) { l ->
                             LightTile(l, repo, onOpen = { detail = "l:${l.id}" })

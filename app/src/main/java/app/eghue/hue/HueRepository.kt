@@ -499,20 +499,39 @@ class HueRepository(
         true
     } ?: false
 
-    /** Renames a light (and its device, which is what the Hue app shows). */
-    suspend fun renameLight(lightId: String, name: String): Boolean {
+    /**
+     * Writes light metadata (name, fixture type). The device holds what the Hue app shows; the
+     * light's own copy is updated too where the bridge allows it (some firmware makes it read-only).
+     */
+    private suspend fun writeLightMetadata(what: String, lightId: String, body: JsonObject): Boolean {
         val l = _home.value.light(lightId) ?: return false
-        val body = buildJsonObject { putJsonObject("metadata") { put("name", name) } }
-        val ok = l.deviceId?.let { write("rename the light", "device", it, body) } ?: true
-        return ok && write("rename the light", "light", lightId, body)
+        val dev = l.deviceId ?: return write(what, "light", lightId, body)
+        if (!write(what, "device", dev, body)) return false
+        target()?.let { t -> runCatching { client.put(t, "light", lightId, body) } }
+        commitToServer(mapOf(lightId to body))
+        return true
     }
 
+    /** Renames a light (and its device, which is what the Hue app shows). */
+    suspend fun renameLight(lightId: String, name: String): Boolean =
+        writeLightMetadata("rename the light", lightId, buildJsonObject { putJsonObject("metadata") { put("name", name) } })
+
     /** Sets a light's fixture type (archetype), which also decides its role in presets. */
-    suspend fun setLightArchetype(lightId: String, archetype: String): Boolean {
-        val l = _home.value.light(lightId) ?: return false
-        val body = buildJsonObject { putJsonObject("metadata") { put("archetype", archetype) } }
-        l.deviceId?.let { write("change the fixture type", "device", it, body) }
-        return write("change the fixture type", "light", lightId, body)
+    suspend fun setLightArchetype(lightId: String, archetype: String): Boolean =
+        writeLightMetadata("change the fixture type", lightId, buildJsonObject { putJsonObject("metadata") { put("archetype", archetype) } })
+
+    /** Dims every light in the home at once (Full view's home slider). */
+    fun setHomeBrightness(brightness: Float) {
+        val home = _home.value
+        val gl = home.homeGroupedLightId ?: return
+        // Dimming only: lights that are off stay off.
+        val body = buildJsonObject { putJsonObject("dimming") { put("brightness", (brightness.coerceIn(1f, 100f) * 10).toInt() / 10.0) } }
+        val patches = HashMap<String, JsonObject>()
+        val member = body
+        home.lights.filter { it.on }.forEach { patches[it.id] = member }
+        patches[gl] = body
+        addOverlays(patches)
+        queue.submit("grouped_light", gl, body)
     }
 
     // ---- Zones ----------------------------------------------------------------------------------

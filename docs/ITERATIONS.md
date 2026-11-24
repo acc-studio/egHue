@@ -11,6 +11,24 @@ The app has two faces:
 
 ---
 
+## Iteration 10 · v0.13.0 · Polish and hardening
+
+**Why:** after a run of features, a pass on rough edges and things a real bridge might do
+differently from the simulator.
+
+**What changed**
+- **All lights bar** (Full home): one brightness bar for every light that's on ("All lights · 4 on").
+  It dims only; lights that are off stay off.
+- **Lite option:** Settings › Appearance › *Show individual lights on Home*. Turn it off for just
+  rooms and zones (each light is still inside its room).
+- **Safer renames:** names and fixture types are written to the device (what the Hue app shows)
+  first, then to the light where the bridge allows it. Firmware that makes the light's copy read-only
+  no longer shows a false error.
+
+**Verified** on the emulator: Full home with the All lights bar (61%, 4 on). 63 unit tests pass.
+
+---
+
 ## Iteration 9 · v0.12.0 · Motion sensors that switch lights
 
 **Why:** a motion sensor was only a reading in the Devices tab. Its real job is switching the

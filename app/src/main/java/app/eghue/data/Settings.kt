@@ -55,6 +55,15 @@ class Settings(context: Context) {
         _viewMode.value = mode
     }
 
+    private val _showLights = MutableStateFlow(prefs.getBoolean(K_SHOW_LIGHTS, true))
+    /** Show the individual Lights section on the home screen (rooms and zones always show). */
+    val showLights: StateFlow<Boolean> = _showLights.asStateFlow()
+
+    fun setShowLights(show: Boolean) {
+        prefs.edit { putBoolean(K_SHOW_LIGHTS, show) }
+        _showLights.value = show
+    }
+
     private val _tileRoom = MutableStateFlow(prefs.getString(K_TILE_ROOM, null))
     /** The room or zone the Quick Settings room tile toggles (null: the first room). */
     val tileRoom: StateFlow<String?> = _tileRoom.asStateFlow()
@@ -118,5 +127,6 @@ class Settings(context: Context) {
         const val K_FOLLOW_POWER_ON = "follow_power_on"
         const val K_VIEW = "view_mode"
         const val K_TILE_ROOM = "tile_room"
+        const val K_SHOW_LIGHTS = "show_lights"
     }
 }

@@ -66,6 +66,7 @@ fun SettingsScreen(c: AppContainer, onBack: () -> Unit, onOpenRemote: (String) -
     val followPowerOn by c.settings.followPowerOn.collectAsStateWithLifecycle()
     val viewMode by c.settings.viewMode.collectAsStateWithLifecycle()
     val tileRoom by c.settings.tileRoom.collectAsStateWithLifecycle()
+    val showLights by c.settings.showLights.collectAsStateWithLifecycle()
     var pickTileRoom by remember { mutableStateOf(false) }
     val home by c.repository.home.collectAsStateWithLifecycle()
     val auto by c.updater.autoUpdate.collectAsStateWithLifecycle()
@@ -195,6 +196,11 @@ fun SettingsScreen(c: AppContainer, onBack: () -> Unit, onOpenRemote: (String) -
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                SwitchRow(
+                    "Show individual lights on Home",
+                    if (showLights) "Rooms, zones and every light" else "Just rooms and zones; lights are inside each room",
+                    showLights,
+                ) { c.settings.setShowLights(it) }
                 Spacer(Modifier.height(8.dp))
                 Text("Theme", style = MaterialTheme.typography.bodyLarge)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 6.dp)) {

@@ -509,6 +509,40 @@ class HueRepository(
         return write("change the fixture type", "light", lightId, body)
     }
 
+    // ---- Zones ----------------------------------------------------------------------------------
+
+    private fun zoneChildren(lightIds: Collection<String>) =
+        JsonArray(lightIds.map { id -> buildJsonObject { put("rid", id); put("rtype", "light") } })
+
+    /** Creates a zone of [lightIds]. Returns its id; the full state is reloaded so its group control appears. */
+    suspend fun createZone(name: String, archetype: String, lightIds: Collection<String>): String? = sceneOp("create the zone") { t ->
+        val body = buildJsonObject {
+            putJsonObject("metadata") { put("name", name); put("archetype", archetype) }
+            put("children", zoneChildren(lightIds))
+        }
+        val id = client.create(t, "zone", body)
+        refresh(t)
+        id
+    }
+
+    suspend fun updateZone(zoneId: String, name: String, archetype: String, lightIds: Collection<String>): Boolean = sceneOp("save the zone") { t ->
+        val body = buildJsonObject {
+            putJsonObject("metadata") { put("name", name); put("archetype", archetype) }
+            put("children", zoneChildren(lightIds))
+        }
+        client.put(t, "zone", zoneId, body)
+        commitToServer(mapOf(zoneId to body))
+        true
+    } ?: false
+
+    suspend fun deleteZone(zoneId: String): Boolean = sceneOp("delete the zone") { t ->
+        val gl = _home.value.group(zoneId)?.groupedLightId
+        client.delete(t, "zone", zoneId)
+        forget(zoneId)
+        gl?.let(::forget)
+        true
+    } ?: false
+
     suspend fun renameGroup(groupId: String, name: String): Boolean {
         val g = _home.value.group(groupId) ?: return false
         val body = buildJsonObject { putJsonObject("metadata") { put("name", name) } }

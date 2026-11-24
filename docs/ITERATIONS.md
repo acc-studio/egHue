@@ -11,6 +11,25 @@ The app has two faces:
 
 ---
 
+## Iteration 6 · v0.9.0 · Zones
+
+**Why:** zones ("Downstairs", "Reading corner", "TV area") are how people group lights across
+rooms, and before this they had to go back to the Hue app to make one.
+
+**What changed**
+- **Devices tab › Rooms & zones** (Full): every room (tap for its controls) and zone, plus
+  *New zone*.
+- **Zone editor:** name, an icon (Zone, Living, Dining, Kitchen, Bedroom, Work, TV, Reading,
+  Hallway, Outside, Floor), and a light checklist grouped by room. Saving a new zone reloads the
+  bridge state so it shows up straight away with its own on/off, dimming, presets and scenes.
+- Edit any zone (including Hue-app zones): rename, change icon, add or remove lights. Delete
+  removes the zone (and its scenes) but leaves the lights alone.
+
+**Verified** on the emulator against the fake bridge (now with zone POST, PUT, DELETE): created
+"Downstairs" (appeared in the list) and deleted it. 56 unit tests pass.
+
+---
+
 ## Iteration 5 · v0.8.0 · Quick Settings tiles and launcher shortcuts
 
 **Why:** the fastest light switch is the one you don't have to open an app for. These help both

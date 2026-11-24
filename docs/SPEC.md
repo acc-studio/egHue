@@ -274,7 +274,8 @@ it up on their own.
 | Quick Settings tiles, launcher shortcuts | ✅ All off; one room (chosen in Settings); long-press icon for rooms |
 | Light/dark/system theme | ✅ Plus Material You |
 | Creating or editing your own scenes | ✅ Save current look, rename, update, delete; full scene editor in Full view |
-| Creating or editing rooms, zones | ❌ Out of scope (do it in the Hue app; egHue picks it up live) |
+| Creating, editing, deleting zones | ✅ Devices tab (Full) |
+| Creating rooms, moving lights between rooms | ❌ Use the Hue app (egHue picks it up live); renaming rooms is in Full view |
 | Automations: wake up, bedtime, timers, timed scenes | ✅ Full view, stored on the bridge; sleep timer in every room |
 | Hue Sync, entertainment areas | ❌ Out of scope |
 | Control away from home | ❌ Local only for now (needs Hue Remote API credentials; possible later) |

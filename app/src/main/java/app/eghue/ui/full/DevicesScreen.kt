@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material.icons.outlined.Settings
@@ -48,6 +49,7 @@ import app.eghue.AppContainer
 import app.eghue.hue.LightUi
 import app.eghue.hue.SensorUi
 import app.eghue.ui.components.Dot
+import app.eghue.ui.components.groupIcon
 import app.eghue.ui.components.lightIcon
 import app.eghue.ui.detail.DetailSheet
 import app.eghue.ui.home.lightStatus
@@ -59,7 +61,7 @@ import kotlin.math.roundToInt
 /** Every light, sensor, remote and the bridge itself. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevicesScreen(c: AppContainer, onOpenSettings: () -> Unit, onOpenRemote: (String) -> Unit) {
+fun DevicesScreen(c: AppContainer, onOpenSettings: () -> Unit, onOpenRemote: (String) -> Unit, onEditZone: (String?) -> Unit) {
     val repo = c.repository
     val home by repo.home.collectAsStateWithLifecycle()
     val bridge by c.settings.bridge.collectAsStateWithLifecycle()
@@ -82,6 +84,15 @@ fun DevicesScreen(c: AppContainer, onOpenSettings: () -> Unit, onOpenRemote: (St
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
+            item { Header("Rooms & zones") }
+            items(home.rooms, key = { "g" + it.id }) { g ->
+                Row_(groupIcon(g.archetype, g.kind), g.name, "Room · ${g.lightIds.size} lights", onClick = { detail = "g:${g.id}" })
+            }
+            items(home.zones, key = { "z" + it.id }) { z ->
+                Row_(groupIcon(z.archetype, z.kind), z.name, "Zone · ${z.lightIds.size} lights · tap to edit", onClick = { onEditZone(z.id) })
+            }
+            item { Row_(Icons.Outlined.AddCircleOutline, "New zone", "Group any lights, across rooms", onClick = { onEditZone(null) }) }
+
             if (home.lights.isNotEmpty()) item { Header("Lights · ${home.lights.size}") }
             items(home.lights, key = { "l" + it.id }) { l -> LightRow(l, onClick = { detail = "l:${l.id}" }) }
 

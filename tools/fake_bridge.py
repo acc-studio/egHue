@@ -394,6 +394,16 @@ def handle_put(rtype, rid_, body):
             if ch:
                 updates.append({"id": l["id"], "type": "light", "owner": l["owner"], **ch})
         affected_groups = {g["id"] for g in state.values() if g["type"] == "grouped_light"}
+    elif rtype in ("zone", "room"):
+        z = state[rid_]
+        ch = {}
+        if "children" in body:
+            z["children"] = body["children"]; ch["children"] = body["children"]
+        if "metadata" in body:
+            z["metadata"].update(body["metadata"]); ch["metadata"] = z["metadata"]
+        if ch:
+            updates.append({"id": rid_, "type": rtype, **ch})
+        affected_groups = {s["rid"] for s in z["services"] if s["rtype"] == "grouped_light"}
     elif rtype == "device":
         d = state[rid_]
         if "identify" in body:
@@ -528,6 +538,27 @@ class Handler(BaseHTTPRequestHandler):
                 event([copy.deepcopy(scene)], kind="add")
             print("created scene", name, flush=True)
             return self.send_json({"errors": [], "data": [{"rid": sid, "rtype": "scene"}]})
+        if p == "/clip/v2/resource/zone":
+            if not self.authed():
+                return
+            b = self.body()
+            with lock:
+                name = (b.get("metadata") or {}).get("name", "")
+                kids = b.get("children") or []
+                if not name or len(name) > 32 or any(c.get("rid") not in state for c in kids):
+                    return self.send_json({"errors": [{"description": "invalid zone"}], "data": []}, 400)
+                gid, glid = rid(), rid()
+                zone = {"id": gid, "type": "zone", "id_v1": "/groups/%d" % (200 + len(state)),
+                        "metadata": {"name": name, "archetype": (b.get("metadata") or {}).get("archetype", "other")},
+                        "children": kids, "services": [{"rid": glid, "rtype": "grouped_light"}]}
+                gl = {"id": glid, "type": "grouped_light", "id_v1": zone["id_v1"], "owner": {"rid": gid, "rtype": "zone"},
+                      "on": {"on": False}, "dimming": {"brightness": 0.0}}
+                state[gid] = zone
+                state[glid] = gl
+                recompute_group(glid)
+                event([copy.deepcopy(zone), copy.deepcopy(gl)], kind="add")
+            print("created zone", name, flush=True)
+            return self.send_json({"errors": [], "data": [{"rid": gid, "rtype": "zone"}]})
         if p.startswith("/api/" + APP_KEY + "/"):
             what = p[len("/api/" + APP_KEY + "/"):]
             b = self.body()
@@ -580,7 +611,11 @@ class Handler(BaseHTTPRequestHandler):
                 if o is None or o["type"] != rtype or rtype not in DELETABLE:
                     return self.send_json({"errors": [{"description": "not found"}], "data": []}, 404)
                 del state[rid_]
-                event([{"id": rid_, "type": rtype}], "delete")
+                gone = [{"id": rid_, "type": rtype}]
+                for s in o.get("services", []):
+                    if state.pop(s["rid"], None) is not None:
+                        gone.append({"id": s["rid"], "type": s["rtype"]})
+                event(gone, "delete")
             return self.send_json({"errors": [], "data": [{"rid": rid_, "rtype": rtype}]})
         self.send_json({"errors": [{"description": "not found"}]}, 404)
 

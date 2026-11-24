@@ -96,6 +96,8 @@ data class SceneUi(
     val appdata: String? = null,
     /** Lights the scene sets. */
     val targets: Set<String> = emptySet(),
+    /** A preset egHue used to have; hidden and cleaned up. */
+    val retired: Boolean = false,
 )
 
 data class HomeUi(
@@ -298,6 +300,7 @@ private fun deriveScene(s: JsonObject): SceneUi? {
         preset = Preset.fromAppdata(s.obj("metadata")?.str("appdata")),
         appdata = s.obj("metadata")?.str("appdata"),
         targets = s.arr("actions")?.objects().orEmpty().mapNotNull { it.ref("target")?.rid }.toSet(),
+        retired = Preset.isRetired(s.obj("metadata")?.str("appdata")),
     )
 }
 

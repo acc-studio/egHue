@@ -165,7 +165,7 @@ private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, onOpenLig
         SceneGrid(presets, onRecall = { key -> repo.applyPreset(g.id, Preset.valueOf(key)) })
     }
     // egHue's saved presets already show above.
-    val scenes = allScenes.filter { it.preset == null }
+    val scenes = allScenes.filter { it.preset == null && !it.retired }
     if (scenes.isNotEmpty()) {
         SectionTitle("Scenes")
         SceneGrid(scenes, onRecall = repo::recallScene)

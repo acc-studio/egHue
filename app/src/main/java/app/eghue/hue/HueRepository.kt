@@ -393,6 +393,7 @@ class HueRepository(
             try {
                 val sceneId = ensurePresetScene(groupId, preset) ?: return@launch
                 recallScene(sceneId)
+                retireOldPresets(groupId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: UnauthorizedException) {
@@ -439,6 +440,21 @@ class HueRepository(
         val id = client.create(t, "scene", body)
         storeScene(id, name, g, preset, actionsJson)
         return id
+    }
+
+    /** Deletes scenes saved for presets egHue no longer has (they're hidden in the app already). */
+    private suspend fun retireOldPresets(groupId: String) {
+        val t = target() ?: return
+        for (s in _home.value.scenesFor(groupId).filter { it.retired }) {
+            runCatching { client.delete(t, "scene", s.id) }.onSuccess { forget(s.id) }
+        }
+    }
+
+    /** Removes a resource from local state (after deleting it on the bridge). */
+    private fun forget(id: String) {
+        synchronized(lock) { server = server - id; overlays.remove(id) }
+        publish()
+        persistRequests.tryEmit(Unit)
     }
 
     /** Puts a scene we just wrote into local state, so it can be recalled before the bridge's event arrives. */

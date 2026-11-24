@@ -28,55 +28,81 @@ fun roleOf(light: LightUi): FixtureRole {
     return when {
         "pendant" in n -> FixtureRole.PENDANT
         "ceiling" in n || "spot" in n -> FixtureRole.CEILING
-        "strip" in n -> FixtureRole.ACCENT
+        "strip" in n || "play" in n || "bar" in n -> FixtureRole.ACCENT
         // Plain bulbs with no hint: most bulbs sit in lamps.
         else -> FixtureRole.LAMP
     }
 }
 
-/** A warm light setting: a colour temperature, or an xy colour for lights that can show one. */
+/** A light setting: a colour temperature, or an xy colour for lights that can show one. */
 data class Tone(val mirek: Int, val xy: Xy? = null)
 
-/** One role's setting in a preset; null brightness means off. */
+/** One light's setting in a preset; null brightness means off. */
 data class Look(val tone: Tone, val brightness: Float?)
 
-private val k2700 = Tone(370)
-private val k2400 = Tone(417)
-private val k2200 = Tone(455)
-private val k2000 = Tone(500)
-private val amber = Tone(500, Xy(0.565, 0.405))
-private val deepAmber = Tone(500, Xy(0.595, 0.385))
-private val ember = Tone(500, Xy(0.62, 0.36))
+private fun white(kelvin: Int) = Tone(1_000_000 / kelvin)
+private fun colour(x: Double, y: Double, fallbackKelvin: Int = 2200) = Tone(1_000_000 / fallbackKelvin, Xy(x, y))
 
-enum class Preset(val title: String, private val looks: Map<FixtureRole, Look>) {
-    EVENING("Evening", mapOf(
-        FixtureRole.CEILING to Look(k2700, 45f),
-        FixtureRole.PENDANT to Look(k2700, 55f),
-        FixtureRole.LAMP to Look(k2400, 75f),
-        FixtureRole.ACCENT to Look(amber, 60f),
-    )),
-    UNWIND("Unwind", mapOf(
-        FixtureRole.CEILING to Look(k2200, 15f),
-        FixtureRole.PENDANT to Look(k2200, 25f),
-        FixtureRole.LAMP to Look(k2200, 45f),
-        FixtureRole.ACCENT to Look(deepAmber, 35f),
-    )),
-    DINNER("Dinner", mapOf(
-        FixtureRole.CEILING to Look(k2700, 40f),
-        FixtureRole.PENDANT to Look(k2700, 80f),
-        FixtureRole.LAMP to Look(k2200, 30f),
-        FixtureRole.ACCENT to Look(ember, 25f),
-    )),
-    LATE("Late", mapOf(
-        FixtureRole.CEILING to Look(k2000, null),
-        FixtureRole.PENDANT to Look(k2000, null),
-        // Only the first lamp; see [lookFor].
-        FixtureRole.LAMP to Look(k2000, 10f),
-        FixtureRole.ACCENT to Look(ember, 5f),
-    ));
+// Candlelit
+private val flame = colour(0.585, 0.395, 2000)
+private val rose = colour(0.600, 0.330, 2000)
+// Lounge
+private val honey = colour(0.555, 0.405, 2200)
+private val dusk = colour(0.300, 0.170, 2200)
+// Neon: neighbours in this list clash on purpose.
+private val neonPalette = listOf(
+    colour(0.400, 0.160), // magenta
+    colour(0.165, 0.360), // teal
+    colour(0.610, 0.370), // tangerine
+    colour(0.210, 0.090), // violet
+    colour(0.480, 0.250), // hot pink
+    colour(0.400, 0.520), // chartreuse
+)
+
+/**
+ * egHue's built-in looks. Each is designed per fixture: what a ceiling light, a pendant, a lamp and
+ * an accent (strip, bar, bloom) should do for that mood, with fallbacks for rooms that lack a role.
+ */
+enum class Preset(val title: String, private val key: String) {
+    /** Romantic: no overhead light, low flame-coloured lamps, a rose glow behind things. */
+    CANDLELIT("Candlelit", "candle"),
+    /** Reading: lamps bright and neutral-warm (never blue), overhead fill, accents quiet. */
+    READING("Reading", "read"),
+    /** Fun: every colour light gets a different, deliberately clashing saturated colour. */
+    NEON("Neon", "neon"),
+    /** Chill: warm honey lamps, a dusky violet accent glow, overhead lights off. */
+    LOUNGE("Lounge", "lounge");
 
     /** Tag stored in the scene's `metadata.appdata` (max 16 chars). Bump [VERSION] when looks change. */
-    val appdata: String get() = "$TAG${name.lowercase()}:$VERSION"
+    val appdata: String get() = "$TAG$key:$VERSION"
+
+    /** The design for one role (colour lights in [NEON] get their colour from the palette instead). */
+    private fun design(role: FixtureRole): Look = when (this) {
+        CANDLELIT -> when (role) {
+            FixtureRole.CEILING -> Look(white(2000), null)
+            FixtureRole.PENDANT -> Look(white(2000), 15f)
+            FixtureRole.LAMP -> Look(flame, 30f)
+            FixtureRole.ACCENT -> Look(rose, 25f)
+        }
+        READING -> when (role) {
+            FixtureRole.CEILING -> Look(white(2700), 65f)
+            FixtureRole.PENDANT -> Look(white(2900), 80f)
+            FixtureRole.LAMP -> Look(white(2900), 100f)
+            FixtureRole.ACCENT -> Look(white(2700), 35f)
+        }
+        NEON -> when (role) {
+            FixtureRole.CEILING -> Look(white(2200), 45f)
+            FixtureRole.PENDANT -> Look(white(2200), 60f)
+            FixtureRole.LAMP -> Look(white(2200), 75f)
+            FixtureRole.ACCENT -> Look(white(2200), 90f)
+        }
+        LOUNGE -> when (role) {
+            FixtureRole.CEILING -> Look(white(2200), null)
+            FixtureRole.PENDANT -> Look(white(2200), 25f)
+            FixtureRole.LAMP -> Look(honey, 45f)
+            FixtureRole.ACCENT -> Look(dusk, 30f)
+        }
+    }
 
     /** What each light in a room gets: light id to Hue scene action. */
     fun actions(lights: List<LightUi>): Map<String, JsonObject> =
@@ -84,35 +110,47 @@ enum class Preset(val title: String, private val looks: Map<FixtureRole, Look>) 
 
     /** Display colours for a preset tile in this room. */
     fun previewColors(lights: List<LightUi>): List<Int> {
-        val looks = plan(lights).values.filter { it.brightness != null }.ifEmpty { looks.values.toList() }
-        return looks.map { it.tone.xy?.let(ColorUtil::xyToRgb) ?: ColorUtil.mirekToRgb(it.tone.mirek) }.distinct().take(4)
+        val planned = plan(lights)
+        val looks = lights.mapNotNull { l -> planned[l.id]?.takeIf { it.brightness != null }?.let { l to it } }
+        val colours = looks.map { (l, look) ->
+            val xy = look.tone.xy
+            if (xy != null && l.supportsColor) ColorUtil.xyToRgb(xy) else ColorUtil.mirekToRgb(look.tone.mirek)
+        }.distinct()
+        return colours.ifEmpty { listOf(ColorUtil.mirekToRgb(design(FixtureRole.LAMP).tone.mirek)) }.take(4)
     }
 
     private fun plan(lights: List<LightUi>): Map<String, Look> {
         val sorted = lights.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
         val roles = sorted.associate { it.id to roleOf(it) }
         val hasLamp = roles.values.any { it == FixtureRole.LAMP }
-        val hasPendant = roles.values.any { it == FixtureRole.PENDANT }
-        // In Late, one light stays on as the "lamp": the first lamp, or the first light if there are none.
-        val lateLight = sorted.firstOrNull { roles[it.id] == FixtureRole.LAMP }?.id ?: sorted.firstOrNull()?.id
         val seen = HashMap<FixtureRole, Int>()
-        return sorted.associate { light ->
+        var colourIndex = 0
+        val plan = LinkedHashMap<String, Look>()
+        for (light in sorted) {
             val role = roles.getValue(light.id)
-            var look = looks.getValue(role)
-            if (this == LATE) {
-                look = if (light.id == lateLight) looks.getValue(FixtureRole.LAMP)
-                else if (role == FixtureRole.ACCENT) look else Look(look.tone, null)
-            } else if (!hasLamp && (role == FixtureRole.CEILING || role == FixtureRole.PENDANT)) {
-                // No lamps: overhead lights carry the room.
-                look = looks.getValue(FixtureRole.LAMP)
-            } else if (this == DINNER && !hasPendant && role == FixtureRole.CEILING) {
-                look = look.copy(brightness = 60f)
+            var look = design(role)
+            // No lamps: overhead lights stand in for them, so the room is never dark.
+            if (!hasLamp && (role == FixtureRole.CEILING || role == FixtureRole.PENDANT)) look = design(FixtureRole.LAMP)
+            if (this == NEON) {
+                if (light.supportsColor) {
+                    look = look.copy(tone = neonPalette[colourIndex % neonPalette.size])
+                    colourIndex++
+                } else {
+                    // White-only lights stay low and warm so they don't wash the colours out.
+                    look = Look(white(2200), 25f)
+                }
             }
-            // Several lights in the same role step down a little so the room isn't flat.
+            // In the softer looks, several lights in the same role step down so the room isn't flat.
             val i = seen.merge(role, 1, Int::plus)!! - 1
-            val step = STEPS[i % STEPS.size]
-            light.id to look.copy(brightness = look.brightness?.let { (it * step).coerceAtLeast(1f) })
+            val step = if (this == CANDLELIT || this == LOUNGE) STEPS[i % STEPS.size] else 1f
+            plan[light.id] = look.copy(brightness = look.brightness?.let { (it * step).coerceAtLeast(1f) })
         }
+        // Never leave a room completely dark.
+        if (plan.isNotEmpty() && plan.values.all { it.brightness == null }) {
+            val first = sorted.first().id
+            plan[first] = design(FixtureRole.LAMP)
+        }
+        return plan
     }
 
     private fun actionFor(light: LightUi, look: Look): JsonObject = buildJsonObject {
@@ -126,9 +164,7 @@ enum class Preset(val title: String, private val looks: Map<FixtureRole, Look>) 
                 putJsonObject("xy") { put("x", xy.x); put("y", xy.y) }
             }
             light.supportsCt -> putJsonObject("color_temperature") {
-                // Colour accents that can't show colour get their warmest white.
-                val m = if (xy != null) light.mirekMax else look.tone.mirek
-                put("mirek", m.coerceIn(light.mirekMin, light.mirekMax))
+                put("mirek", look.tone.mirek.coerceIn(light.mirekMin, light.mirekMax))
             }
             xy == null && light.supportsColor -> putJsonObject("color") {
                 // Colour-only lights: show the colour temperature as a colour.
@@ -147,7 +183,14 @@ enum class Preset(val title: String, private val looks: Map<FixtureRole, Look>) 
         fun fromAppdata(appdata: String?): Preset? {
             if (appdata == null || !appdata.startsWith(TAG)) return null
             val key = appdata.removePrefix(TAG).substringBefore(':')
-            return entries.firstOrNull { it.name.lowercase() == key }
+            return entries.firstOrNull { it.key == key }
         }
+
+        /** A scene egHue saved for a preset it no longer has (e.g. the first-generation "Evening"). */
+        fun isRetired(appdata: String?): Boolean =
+            appdata != null && appdata.startsWith(TAG) && !appdata.startsWith(SCENE_TAG) && fromAppdata(appdata) == null
+
+        /** Tag for scenes people make in egHue (not presets). */
+        const val SCENE_TAG = "eghue:my:"
     }
 }

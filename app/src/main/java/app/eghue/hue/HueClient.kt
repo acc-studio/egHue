@@ -132,6 +132,22 @@ class HueClient(
         }
     }
 
+    suspend fun delete(t: Target, type: String, id: String): Unit = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url("https://${t.host}/clip/v2/resource/$type/$id")
+            .header(KEY_HEADER, t.key)
+            .delete()
+            .build()
+        http.newCall(req).await().use { resp ->
+            checkAuth(resp)
+            // Already gone counts as deleted.
+            if (!resp.isSuccessful && resp.code != 404) {
+                val o = runCatching { HueJson.parseToJsonElement(resp.body?.string().orEmpty()).jsonObject }.getOrNull()
+                throw HueApiException(o?.arr("errors")?.objects()?.firstOrNull()?.str("description") ?: "HTTP ${resp.code}")
+            }
+        }
+    }
+
     // ---- Legacy (v1) API: switch rules and memory sensors ---------------------------------------
 
     /** GET /api/<key>/<path>; returns the JSON object (e.g. all rules keyed by id). */

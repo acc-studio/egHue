@@ -83,9 +83,17 @@ Opens as a bottom sheet over the home screen:
 - **White | Colour:** shown according to what the lights support.
   - *White:* a warm-to-cool temperature bar plus presets (*Warm*, *Soft*, *Bright*, *Daylight*).
   - *Colour:* a hue/saturation wheel; drag to change colour live.
-- **Presets:** four warm, designed looks in every room and zone: *Evening*, *Unwind*, *Dinner*
-  and *Late*. Each fixture gets its own light by type (ceiling, pendant, lamp, strip/accent):
-  lamps carry the room, overhead lights sit lower, strips glow amber or ember. No cool white.
+- **Presets:** four designed looks in every room and zone. Each fixture gets its own light by
+  type (ceiling, pendant, lamp, accent such as a strip, bar or bloom):
+
+  | Preset | Mood | Ceiling | Pendant | Lamps | Accents |
+  |---|---|---|---|---|---|
+  | *Candlelit* | romantic | off | 2000 K, 15% | flame amber, 30% | rose, 25% |
+  | *Reading* | focus | 2700 K, 65% | 2900 K, 80% | 2900 K, 100% | 2700 K, 35% |
+  | *Neon* | fun | each colour light a different clashing colour (magenta, teal, tangerine, violet, hot pink, chartreuse); white-only lights low and warm | | | |
+  | *Lounge* | chill | off | 2200 K, 25% | honey, 45% | dusk violet, 30% |
+
+  Rooms with no lamps use the lamp look on their overhead lights, so a room is never left dark.
   The first tap saves the preset to the bridge as a real scene, so it then also works on remotes
   and in other Hue apps; it is rewritten automatically if the room's lights change.
 - **Scenes:** **every scene saved on the bridge, including those created in the Hue app**, shown
@@ -257,7 +265,7 @@ it up on their own.
 | On/off, brightness | ✅ One tap / one drag |
 | Colour and white ambience | ✅ Colour wheel, temperature bar, presets |
 | Scenes (incl. Hue-app scenes) | ✅ View and activate, with the active scene shown |
-| Warm presets | ✅ Evening, Unwind, Dinner, Late; designed per fixture, saved as bridge scenes on first use |
+| Designed presets | ✅ Candlelit, Reading, Neon, Lounge; designed per fixture, saved as bridge scenes on first use |
 | All off | ✅ |
 | Power-on behaviour per light | ✅ All four presets incl. custom; also per room |
 | Remote / switch button setup | ✅ Press & hold per button: toggle, scenes, scene cycle, dimming, all off |

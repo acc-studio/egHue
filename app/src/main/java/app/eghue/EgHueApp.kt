@@ -1,5 +1,7 @@
 package app.eghue
 
+import app.eghue.shortcuts.LauncherShortcuts
+
 import android.app.Application
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidgetManager
@@ -94,6 +96,13 @@ class AppContainer(val app: Application) {
                 else -> Unit
             }
         })
+        // Launcher-icon shortcuts follow the room list.
+        scope.launch {
+            repository.home.map { LauncherShortcuts.fingerprint(it) to it }
+                .distinctUntilChanged { a, b -> a.first == b.first }
+                .debounce(1_000)
+                .collect { (_, home) -> if (home.rooms.isNotEmpty()) LauncherShortcuts.publish(app, home) }
+        }
         // Keep home-screen widgets in step with changes made in the app or by other Hue apps.
         scope.launch {
             repository.home.drop(1)

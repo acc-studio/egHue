@@ -345,16 +345,22 @@ class HueRepository(
         queue.submit("grouped_light", gl, body)
     }
 
+    private fun allOffOptimistic() {
+        val home = _home.value
+        val body = onBody(false)
+        val patches = HashMap<String, JsonObject>()
+        home.lights.forEach { patches[it.id] = body }
+        (home.rooms + home.zones).mapNotNull { it.groupedLightId }.forEach { patches[it] = body }
+        home.homeGroupedLightId?.let { patches[it] = body }
+        addOverlays(patches)
+    }
+
     fun allOff() {
         val home = _home.value
         val body = onBody(false)
         val gl = home.homeGroupedLightId
         if (gl != null) {
-            val patches = HashMap<String, JsonObject>()
-            home.lights.forEach { patches[it.id] = body }
-            (home.rooms + home.zones).mapNotNull { it.groupedLightId }.forEach { patches[it] = body }
-            patches[gl] = body
-            addOverlays(patches)
+            allOffOptimistic()
             queue.submit("grouped_light", gl, body)
         } else {
             home.rooms.forEach { setGroupOn(it.id, false) }
@@ -837,6 +843,24 @@ class HueRepository(
             synchronized(lock) { overlays.clear() }
             publish()
             _widgetError.value = true
+            false
+        }
+    }
+
+    /** Turns every light off and waits for the bridge (Quick Settings tile, shortcuts). */
+    suspend fun allOffNow(): Boolean {
+        ensureLoaded()
+        val t = target() ?: return false
+        val gl = _home.value.homeGroupedLightId ?: return false
+        return try {
+            allOffOptimistic()
+            client.put(t, "grouped_light", gl, onBody(false))
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            synchronized(lock) { overlays.clear() }
+            publish()
             false
         }
     }

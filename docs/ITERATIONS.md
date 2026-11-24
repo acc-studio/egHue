@@ -11,6 +11,27 @@ The app has two faces:
 
 ---
 
+## Iteration 5 · v0.8.0 · Quick Settings tiles and launcher shortcuts
+
+**Why:** the fastest light switch is the one you don't have to open an app for. These help both
+views and add nothing to the Lite screen.
+
+**What changed**
+- **Quick Settings tiles** (add them from the Quick Settings edit screen):
+  - *Lights off*: every light off.
+  - *Room*: toggles one room or zone, showing its name, on/off state and brightness (Android 10+).
+    Pick the room in Settings › Lights › *Quick Settings room tile* (the first room by default).
+- **Launcher shortcuts:** long-press the egHue icon for *All off* and your first three rooms.
+  Each toggles straight away without opening the app (an invisible activity), and shows a toast
+  if the bridge can't be reached. The list follows your rooms as they change.
+- Both use the widget's start-from-cold path: resync if state is older than 15 s, then switch.
+
+**Verified** on the emulator: shortcuts published (All off, Kitchen, Hallway, Bedroom); room tile
+added and clicked through `cmd statusbar` (bridge received the light commands); All-off shortcut
+(home grouped_light PUT). 56 unit tests pass.
+
+---
+
 ## Iteration 4 · v0.7.0 · Devices, effects and housekeeping
 
 **Why:** a complete app covers more than lights and scenes: sensors, finding a bulb, naming

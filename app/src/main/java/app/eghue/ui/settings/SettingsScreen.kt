@@ -65,6 +65,8 @@ fun SettingsScreen(c: AppContainer, onBack: () -> Unit, onOpenRemote: (String) -
     val update by c.updater.state.collectAsStateWithLifecycle()
     val followPowerOn by c.settings.followPowerOn.collectAsStateWithLifecycle()
     val viewMode by c.settings.viewMode.collectAsStateWithLifecycle()
+    val tileRoom by c.settings.tileRoom.collectAsStateWithLifecycle()
+    var pickTileRoom by remember { mutableStateOf(false) }
     val home by c.repository.home.collectAsStateWithLifecycle()
     val auto by c.updater.autoUpdate.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -121,6 +123,39 @@ fun SettingsScreen(c: AppContainer, onBack: () -> Unit, onOpenRemote: (String) -
                     else "Lights come back in their last colour and brightness.",
                     followPowerOn,
                 ) { c.settings.setFollowPowerOn(it) }
+                val groups = home.rooms + home.zones
+                val current = groups.firstOrNull { it.id == tileRoom } ?: home.rooms.firstOrNull()
+                Row(
+                    Modifier.fillMaxWidth().clickable { pickTileRoom = true }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Quick Settings room tile", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Add the egHue tiles from your Quick Settings edit screen. The room tile toggles: ${current?.name ?: "your first room"}.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null)
+                }
+                if (pickTileRoom) AlertDialog(
+                    onDismissRequest = { pickTileRoom = false },
+                    title = { Text("Room tile toggles") },
+                    text = {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            groups.forEach { g ->
+                                Text(
+                                    g.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (g.id == current?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.fillMaxWidth().clickable { c.settings.setTileRoom(g.id); pickTileRoom = false }.padding(vertical = 12.dp),
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { pickTileRoom = false }) { Text("Close") } },
+                )
             }
 
             if (home.remotes.isNotEmpty()) Card("Remotes") {

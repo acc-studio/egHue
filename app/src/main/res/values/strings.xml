@@ -8,4 +8,6 @@
     <string name="update_available_text">Version %1$s is ready to install.</string>
     <string name="update_ready_title">Finish updating egHue</string>
     <string name="update_ready_text">Tap to install version %1$s.</string>
+    <string name="tile_all_off">Lights off</string>
+    <string name="tile_room">Room lights</string>
 </resources>

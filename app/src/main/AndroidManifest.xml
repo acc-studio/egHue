@@ -47,5 +47,37 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/hue_widget_info" />
         </receiver>
+        <!-- Launcher-icon shortcuts ("toggle Living room"): does the job and closes, no UI. -->
+        <activity
+            android:name=".shortcuts.ShortcutActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name=".shortcuts.AllOffTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_power"
+            android:label="@string/tile_all_off"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="false" />
+        </service>
+
+        <service
+            android:name=".shortcuts.RoomTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_room"
+            android:label="@string/tile_room"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="true" />
+        </service>
     </application>
 </manifest>

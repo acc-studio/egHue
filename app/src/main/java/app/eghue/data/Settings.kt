@@ -55,6 +55,15 @@ class Settings(context: Context) {
         _viewMode.value = mode
     }
 
+    private val _tileRoom = MutableStateFlow(prefs.getString(K_TILE_ROOM, null))
+    /** The room or zone the Quick Settings room tile toggles (null: the first room). */
+    val tileRoom: StateFlow<String?> = _tileRoom.asStateFlow()
+
+    fun setTileRoom(id: String?) {
+        prefs.edit { putString(K_TILE_ROOM, id) }
+        _tileRoom.value = id
+    }
+
     fun saveBridge(host: String, id: String, name: String, appKey: String, clientKey: String?, certPin: String?) {
         prefs.edit(commit = true) {
             putString(K_HOST, host)
@@ -108,5 +117,6 @@ class Settings(context: Context) {
         const val K_DYNAMIC = "dynamic_color"
         const val K_FOLLOW_POWER_ON = "follow_power_on"
         const val K_VIEW = "view_mode"
+        const val K_TILE_ROOM = "tile_room"
     }
 }

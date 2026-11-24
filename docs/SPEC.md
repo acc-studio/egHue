@@ -141,8 +141,12 @@ Two builds ("flavors") from one codebase:
 | Delivered by | GitHub Releases of `acc-studio/egHue` | Google Play |
 | Checks | On launch (at most every 30 min) and every 6 h in the background | Play's own auto-update, plus an in-app *flexible update* check on launch |
 | Install | Downloads in the background. **Silent install on Android 12+** once "Install unknown apps" has been allowed for egHue. On older versions, or before that permission, one tap on the system prompt (or the notification). | Downloads while you use the app |
+| First update | The first self-update after installing the APK by hand asks once (*"Do you want to update this app?"*). After that, egHue is the app's installer of record and updates install silently. | n/a |
 | Timing | If you're using the app, waits until you leave it, so it never closes under you | Same: completes when you leave the app |
 | Safety | Only installs a newer `versionCode` of the same package. Android rejects anything not signed with the same key. | Play-managed |
+
+Verified end to end: an installed 0.1.0 found, downloaded, verified and installed 0.1.1 from this
+repo's GitHub Releases, keeping its pairing and settings.
 
 **Shipping an update** is a single command: `git tag v0.2.0 && git push origin v0.2.0`.
 GitHub Actions tests, builds and signs both flavors, then publishes the release. Installed apps pick

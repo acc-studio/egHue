@@ -39,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,10 +60,13 @@ import app.eghue.hue.HomeUi
 import app.eghue.hue.HueRepository
 import app.eghue.hue.LightUi
 import app.eghue.hue.Preset
+import app.eghue.hue.SceneCapture
 import app.eghue.hue.SceneUi
 import app.eghue.hue.Xy
 import app.eghue.ui.components.BrightnessBar
+import app.eghue.ui.components.SceneGrid
 import app.eghue.ui.components.ColorWheel
+import app.eghue.ui.components.NameDialog
 import app.eghue.ui.components.SectionTitle
 import app.eghue.ui.components.TemperatureBar
 import app.eghue.ui.components.groupIcon
@@ -70,6 +74,7 @@ import app.eghue.ui.components.lightIcon
 import app.eghue.ui.home.LightTile
 import app.eghue.ui.home.groupStatus
 import app.eghue.ui.home.lightStatus
+import kotlinx.coroutines.launch
 
 /**
  * Bottom sheet with full controls. [target] is "g:<room/zone id>" or "l:<light id>", optionally
@@ -77,7 +82,14 @@ import app.eghue.ui.home.lightStatus
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailSheet(target: String, home: HomeUi, repo: HueRepository, onNavigate: (String?) -> Unit) {
+fun DetailSheet(
+    target: String,
+    home: HomeUi,
+    repo: HueRepository,
+    onNavigate: (String?) -> Unit,
+    /** Full view: opens the scene editor. */
+    onEditScene: ((String) -> Unit)? = null,
+) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val current = target.substringBefore('|')
     val back = target.substringAfter('|', "").ifEmpty { null }
@@ -107,7 +119,11 @@ fun DetailSheet(target: String, home: HomeUi, repo: HueRepository, onNavigate: (
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             when {
-                group != null -> GroupDetail(group, home, repo, onOpenLight = { onNavigate("l:$it|g:${group.id}") })
+                group != null -> GroupDetail(
+                    group, home, repo,
+                    onOpenLight = { onNavigate("l:$it|g:${group.id}") },
+                    onEditScene = onEditScene?.let { f -> { id: String -> onNavigate(null); f(id) } },
+                )
                 light != null -> LightDetail(
                     light, repo,
                     backLabel = back?.let { home.group(it.substring(2))?.name },
@@ -119,7 +135,7 @@ fun DetailSheet(target: String, home: HomeUi, repo: HueRepository, onNavigate: (
 }
 
 @Composable
-private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, onOpenLight: (String) -> Unit) {
+private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, onOpenLight: (String) -> Unit, onEditScene: ((String) -> Unit)?) {
     Header(
         icon = groupIcon(g.archetype, g.kind),
         title = g.name,
@@ -166,10 +182,30 @@ private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, onOpenLig
     }
     // egHue's saved presets already show above.
     val scenes = allScenes.filter { it.preset == null && !it.retired }
-    if (scenes.isNotEmpty()) {
+    var sceneMenu by remember { mutableStateOf<SceneUi?>(null) }
+    var naming by remember { mutableStateOf(false) }
+    if (lights.isNotEmpty() || scenes.isNotEmpty()) {
         SectionTitle("Scenes")
-        SceneGrid(scenes, onRecall = repo::recallScene)
+        SceneGrid(
+            scenes,
+            onRecall = repo::recallScene,
+            onLongPress = { sceneMenu = it },
+            addLabel = "Save current look",
+            onAdd = if (lights.isNotEmpty() && g.groupedLightId != null) ({ naming = true }) else null,
+        )
     }
+    if (naming) {
+        val scope = rememberCoroutineScope()
+        NameDialog(
+            title = "Save as a scene",
+            message = "Saves how ${g.name}'s lights look right now.",
+            initial = SceneCapture.uniqueName("My scene", allScenes.map { it.name }),
+            confirmLabel = "Save",
+            onDismiss = { naming = false },
+            onConfirm = { name -> naming = false; scope.launch { repo.saveCurrentAsScene(g.id, name) } },
+        )
+    }
+    sceneMenu?.let { s -> SceneActions(s, g, repo, onDismiss = { sceneMenu = null }, onEdit = onEditScene) }
     if (lights.isNotEmpty()) {
         SectionTitle("Lights")
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -312,54 +348,6 @@ private fun WhitePresets(mirekMin: Int, mirekMax: Int, onMirek: (Int) -> Unit) {
                 Spacer(Modifier.height(6.dp))
                 Text(label, style = MaterialTheme.typography.labelMedium)
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun SceneGrid(scenes: List<SceneUi>, onRecall: (String) -> Unit) {
-    FlowRow(
-        maxItemsInEachRow = 2,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        scenes.forEach { s -> SceneChip(s, onClick = { onRecall(s.id) }, modifier = Modifier.weight(1f)) }
-        if (scenes.size % 2 == 1) Spacer(Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun SceneChip(scene: SceneUi, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val colors = scene.colors.ifEmpty { listOf(ColorUtil.WARM_WHITE) }.map { Color(it) }
-    val brush = if (colors.size == 1) Brush.linearGradient(listOf(colors[0], colors[0])) else Brush.linearGradient(colors)
-    val outline = MaterialTheme.colorScheme.onSurface
-    Box(
-        modifier
-            .height(72.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(brush)
-            .then(if (scene.active) Modifier.border(3.dp, outline, RoundedCornerShape(18.dp)) else Modifier)
-            .clickable(role = Role.Button, onClickLabel = "Activate ${scene.name}", onClick = onClick),
-    ) {
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f)))))
-        Text(
-            scene.name,
-            color = Color.White,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
-        )
-        if (scene.active) {
-            Icon(
-                Icons.Rounded.CheckCircle,
-                contentDescription = "Active",
-                tint = Color.White,
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(20.dp),
-            )
         }
     }
 }

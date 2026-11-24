@@ -272,7 +272,7 @@ it up on their own.
 | Live sync with other apps and switches | ✅ Event stream |
 | Widget | ✅ Configurable, one-tap |
 | Light/dark/system theme | ✅ Plus Material You |
-| Creating or editing your own scenes | ⏳ Planned |
+| Creating or editing your own scenes | ✅ Save current look, rename, update, delete; full scene editor in Full view |
 | Creating or editing rooms, zones | ❌ Out of scope (do it in the Hue app; egHue picks it up live) |
 | Automations, routines, Hue Sync, entertainment areas | ❌ Out of scope |
 | Control away from home | ❌ Local only for now (needs Hue Remote API credentials; possible later) |

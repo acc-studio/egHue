@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -48,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.eghue.AppContainer
 import app.eghue.BuildConfig
 import app.eghue.data.ThemeMode
+import app.eghue.data.ViewMode
 import app.eghue.hue.ConnState
 import app.eghue.update.UpdateState
 import kotlinx.coroutines.launch
@@ -61,6 +64,7 @@ fun SettingsScreen(c: AppContainer, onBack: () -> Unit, onOpenRemote: (String) -
     val dynamic by c.settings.dynamicColor.collectAsStateWithLifecycle()
     val update by c.updater.state.collectAsStateWithLifecycle()
     val followPowerOn by c.settings.followPowerOn.collectAsStateWithLifecycle()
+    val viewMode by c.settings.viewMode.collectAsStateWithLifecycle()
     val home by c.repository.home.collectAsStateWithLifecycle()
     val auto by c.updater.autoUpdate.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -139,6 +143,24 @@ fun SettingsScreen(c: AppContainer, onBack: () -> Unit, onOpenRemote: (String) -
             }
 
             Card("Appearance") {
+                Text("View", style = MaterialTheme.typography.bodyLarge)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    val modes = listOf(ViewMode.LITE to "Lite", ViewMode.FULL to "Full")
+                    modes.forEachIndexed { i, (mode, label) ->
+                        SegmentedButton(
+                            selected = viewMode == mode,
+                            onClick = { c.settings.setViewMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(i, modes.size),
+                        ) { Text(label) }
+                    }
+                }
+                Text(
+                    if (viewMode == ViewMode.LITE) "Just your rooms and lights, as fast as possible."
+                    else "Everything: scenes, automations, devices and more, in tabs.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
                 Text("Theme", style = MaterialTheme.typography.bodyLarge)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 6.dp)) {
                     val modes = listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark")

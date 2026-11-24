@@ -11,6 +11,7 @@ self-signed certificate whose CN is the bridge id (like a real bridge):
   GET  /clip/v2/resource[/type[/id]]  state
   POST /clip/v2/resource/scene        create a scene
   PUT  /clip/v2/resource/type/id      commands (light, grouped_light, scene recall/update)
+  DELETE /clip/v2/resource/scene/id   delete a scene
   GET  /eventstream/clip/v2           Server-Sent Events with live updates
 
 Usage:  python tools/fake_bridge.py [--port 8443] [--auto-press]
@@ -336,6 +337,9 @@ def press(sensor_id, event_code):
     return [r["name"] for r in fired]
 
 
+DELETABLE = {"scene", "zone", "behavior_instance"}
+
+
 def event(updates, kind="update"):
     if not updates:
         return
@@ -508,6 +512,16 @@ class Handler(BaseHTTPRequestHandler):
                 if v1_rules.pop(rid_, None) is None:
                     return self.send_json([{"error": {"type": 3, "address": "/rules/" + rid_, "description": "not available"}}])
             return self.send_json([{"success": "/rules/%s deleted" % rid_}])
+        parts = p.split("/")
+        if len(parts) == 6 and parts[1] == "clip" and self.authed():
+            rtype, rid_ = parts[4], parts[5]
+            with lock:
+                o = state.get(rid_)
+                if o is None or o["type"] != rtype or rtype not in DELETABLE:
+                    return self.send_json({"errors": [{"description": "not found"}], "data": []}, 404)
+                del state[rid_]
+                event([{"id": rid_, "type": rtype}], "delete")
+            return self.send_json({"errors": [], "data": [{"rid": rid_, "rtype": rtype}]})
         self.send_json({"errors": [{"description": "not found"}]}, 404)
 
     def do_PUT(self):

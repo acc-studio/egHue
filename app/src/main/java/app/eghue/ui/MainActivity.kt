@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.eghue.AppContainer
 import app.eghue.container
+import app.eghue.data.ViewMode
+import app.eghue.ui.full.FullApp
 import app.eghue.ui.home.HomeScreen
 import app.eghue.ui.onboarding.OnboardingScreen
 import app.eghue.ui.settings.RemoteScreen
@@ -61,6 +63,7 @@ fun ComponentActivity.AppTheme(c: AppContainer, content: @Composable () -> Unit)
 @Composable
 private fun AppRoot(c: AppContainer) {
     val paired by c.settings.paired.collectAsStateWithLifecycle()
+    val viewMode by c.settings.viewMode.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf("home") }
     if (!paired) screen = "home"
     AnimatedContent(
@@ -77,6 +80,8 @@ private fun AppRoot(c: AppContainer) {
             else -> if (s.startsWith("remote:")) {
                 BackHandler { screen = "settings" }
                 RemoteScreen(c, s.removePrefix("remote:"), onBack = { screen = "settings" })
+            } else if (viewMode == ViewMode.FULL) {
+                FullApp(c, onOpenSettings = { screen = "settings" })
             } else HomeScreen(c, onOpenSettings = { screen = "settings" })
         }
     }

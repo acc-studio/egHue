@@ -405,6 +405,14 @@ class HueRepository(
         }
     }
 
+    /** Sets [groupId]'s lights to [preset] without saving anything (the scene editor's starting points). */
+    fun previewPreset(groupId: String, preset: Preset) {
+        val home = _home.value
+        val g = home.group(groupId) ?: return
+        val lights = g.lightIds.mapNotNull(home::light)
+        preset.actions(lights).forEach { (id, action) -> lightCommand(id, action, action.colorModeHint()) }
+    }
+
     private suspend fun ensurePresetScene(groupId: String, preset: Preset): String? {
         val t = target() ?: return null
         val home = _home.value
@@ -412,12 +420,7 @@ class HueRepository(
         val lights = g.lightIds.mapNotNull(home::light)
         if (lights.isEmpty()) return null
         val actions = preset.actions(lights)
-        val actionsJson = JsonArray(actions.map { (id, action) ->
-            buildJsonObject {
-                putJsonObject("target") { put("rid", id); put("rtype", "light") }
-                put("action", action)
-            }
-        })
+        val actionsJson = SceneCapture.actionsJson(actions)
         val saved = home.scenesFor(groupId).firstOrNull { it.preset == preset }
         if (saved != null) {
             if (saved.appdata == preset.appdata && saved.targets == actions.keys) return saved.id
@@ -426,7 +429,7 @@ class HueRepository(
                 putJsonObject("metadata") { put("name", saved.name); put("appdata", preset.appdata) }
             }
             client.put(t, "scene", saved.id, body)
-            storeScene(saved.id, saved.name, g, preset, actionsJson)
+            storeScene(saved.id, saved.name, g, preset.appdata, actionsJson)
             return saved.id
         }
         // A scene of the same name in this room (e.g. the user's own "Evening") would clash.
@@ -438,7 +441,7 @@ class HueRepository(
             put("actions", actionsJson)
         }
         val id = client.create(t, "scene", body)
-        storeScene(id, name, g, preset, actionsJson)
+        storeScene(id, name, g, preset.appdata, actionsJson)
         return id
     }
 
@@ -458,11 +461,11 @@ class HueRepository(
     }
 
     /** Puts a scene we just wrote into local state, so it can be recalled before the bridge's event arrives. */
-    private fun storeScene(id: String, name: String, g: GroupUi, preset: Preset, actions: JsonArray) {
+    private fun storeScene(id: String, name: String, g: GroupUi, appdata: String?, actions: JsonArray) {
         val scene = buildJsonObject {
             put("id", id)
             put("type", "scene")
-            putJsonObject("metadata") { put("name", name); put("appdata", preset.appdata) }
+            putJsonObject("metadata") { put("name", name); appdata?.let { put("appdata", it) } }
             putJsonObject("group") { put("rid", g.id); put("rtype", if (g.kind == GroupKind.ZONE) "zone" else "room") }
             put("actions", actions)
             putJsonObject("status") { put("active", "inactive") }
@@ -473,6 +476,90 @@ class HueRepository(
         }
         publish()
         persistRequests.tryEmit(Unit)
+    }
+
+    // ---- Your own scenes -------------------------------------------------------------------------
+
+    /** Saves [groupId]'s lights as they are now as a new scene called [name]. Returns its id. */
+    suspend fun saveCurrentAsScene(groupId: String, name: String): String? = sceneOp("save the scene") { t ->
+        val home = _home.value
+        val g = home.group(groupId) ?: return@sceneOp null
+        val lights = g.lightIds.mapNotNull(home::light)
+        if (lights.isEmpty()) return@sceneOp null
+        val actions = SceneCapture.actions(lights)
+        val body = buildJsonObject {
+            putJsonObject("metadata") { put("name", name); put("appdata", Preset.SCENE_TAG + "1") }
+            putJsonObject("group") { put("rid", g.id); put("rtype", if (g.kind == GroupKind.ZONE) "zone" else "room") }
+            put("actions", actions)
+        }
+        val id = client.create(t, "scene", body)
+        storeScene(id, name, g, Preset.SCENE_TAG + "1", actions)
+        // The lights already look like this, so the new scene is the active one.
+        markActive(groupId, id)
+        id
+    }
+
+    /** Rewrites [sceneId] with its room's lights as they are now (and optionally a new name). */
+    suspend fun updateSceneFromCurrent(sceneId: String, name: String?): Boolean = sceneOp("update the scene") { t ->
+        val home = _home.value
+        val scene = synchronized(lock) { server[sceneId] } ?: return@sceneOp false
+        val groupId = scene.ref("group")?.rid ?: return@sceneOp false
+        val g = home.group(groupId) ?: return@sceneOp false
+        val lights = g.lightIds.mapNotNull(home::light)
+        val actions = SceneCapture.actions(lights)
+        val body = buildJsonObject {
+            put("actions", actions)
+            if (name != null) putJsonObject("metadata") { put("name", name) }
+        }
+        client.put(t, "scene", sceneId, body)
+        val local = buildJsonObject {
+            put("actions", actions)
+            if (name != null) putJsonObject("metadata") { put("name", name) }
+        }
+        synchronized(lock) { server[sceneId]?.let { server = server + (sceneId to deepMerge(it, local)) } }
+        publish()
+        persistRequests.tryEmit(Unit)
+        markActive(groupId, sceneId)
+        true
+    } ?: false
+
+    suspend fun renameScene(sceneId: String, name: String): Boolean = sceneOp("rename the scene") { t ->
+        val body = buildJsonObject { putJsonObject("metadata") { put("name", name) } }
+        client.put(t, "scene", sceneId, body)
+        synchronized(lock) { server[sceneId]?.let { server = server + (sceneId to deepMerge(it, body)) } }
+        publish()
+        persistRequests.tryEmit(Unit)
+        true
+    } ?: false
+
+    suspend fun deleteScene(sceneId: String): Boolean = sceneOp("delete the scene") { t ->
+        client.delete(t, "scene", sceneId)
+        forget(sceneId)
+        true
+    } ?: false
+
+    /** Shows [sceneId] as the active scene of [groupId] until the bridge says otherwise. */
+    private fun markActive(groupId: String, sceneId: String) {
+        addOverlays(_home.value.scenesFor(groupId).associate { s ->
+            s.id to buildJsonObject { putJsonObject("status") { put("active", if (s.id == sceneId) "static" else "inactive") } }
+        })
+    }
+
+    /** Runs a bridge write, turning failures into a message. Returns null on failure. */
+    private suspend fun <T> sceneOp(what: String, block: suspend (HueClient.Target) -> T?): T? {
+        val t = target() ?: return null
+        return try {
+            block(t)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: UnauthorizedException) {
+            _connection.value = ConnState.Unauthorized
+            null
+        } catch (e: Exception) {
+            android.util.Log.w("egHue", "Couldn't $what", e)
+            _messages.tryEmit(if (e is HueApiException) "Couldn't $what: ${e.message}" else "Couldn't reach your Hue Bridge")
+            null
+        }
     }
 
     private fun groupPatches(groupedLightId: String, members: List<String>, body: JsonObject, local: JsonObject?): Map<String, JsonObject> {

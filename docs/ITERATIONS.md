@@ -11,6 +11,30 @@ The app has two faces:
 
 ---
 
+## Iteration 2 · v0.5.0 · Full view and your own scenes
+
+**Why:** the app could only play scenes. Making and changing scenes is the most-wanted missing
+feature, and it needs a home that doesn't clutter the Lite screen.
+
+**What changed**
+- **Lite / Full view.** A top-bar button (⚡ / ▦) and Settings › Appearance › View switch between
+  them. Lite is unchanged apart from small additions. Full adds a bottom bar with tabs, starting
+  with *Home* (the Lite screen) and *Scenes*.
+- **Scenes tab** (Full): every room and zone with its presets, its own scenes and a *New scene* tile.
+- **Scene editor** (Full): name it, pick a starting point (any preset, previewed without saving
+  anything, or an existing scene), then shape the real lights with the usual tiles and colour
+  controls. *Save* stores exactly what the lights show. Editing an existing scene plays it first.
+- **Lite additions:** a *Save current look* tile under each room's scenes, and long-press on any
+  scene for *Update to current look*, *Rename* and *Delete* (plus *Edit lights* in Full).
+- egHue-made scenes are tagged (`eghue:my:1`) so later iterations can tell them apart.
+
+**Verified** on the emulator against the fake bridge: Full view, Scenes tab, Neon preview on the
+lights, Save (scene POSTed), long-press menu, Delete (scene DELETEd). Fixed a status-bar overlap
+in Full view found that way. Unit tests: scene capture (white, colour, off, minimum brightness),
+unique names.
+
+---
+
 ## Iteration 1 · v0.4.0 · Presets, redesigned
 
 **Why:** the first presets (Evening, Unwind, Dinner, Late) were one warm look at four brightness

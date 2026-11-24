@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.asStateFlow
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/** Lite: the quick home screen only. Full: every feature, in tabs. */
+enum class ViewMode { LITE, FULL }
+
 data class BridgeInfo(val id: String, val name: String, val host: String)
 
 /** App settings. SharedPreferences keeps reads synchronous, so the first frame has the right theme. */
@@ -40,6 +43,16 @@ class Settings(context: Context) {
     fun setFollowPowerOn(enabled: Boolean) {
         prefs.edit { putBoolean(K_FOLLOW_POWER_ON, enabled) }
         _followPowerOn.value = enabled
+    }
+
+    private val _viewMode = MutableStateFlow(
+        runCatching { ViewMode.valueOf(prefs.getString(K_VIEW, null) ?: "") }.getOrDefault(ViewMode.LITE)
+    )
+    val viewMode: StateFlow<ViewMode> = _viewMode.asStateFlow()
+
+    fun setViewMode(mode: ViewMode) {
+        prefs.edit { putString(K_VIEW, mode.name) }
+        _viewMode.value = mode
     }
 
     fun saveBridge(host: String, id: String, name: String, appKey: String, clientKey: String?, certPin: String?) {
@@ -94,5 +107,6 @@ class Settings(context: Context) {
         const val K_THEME = "theme"
         const val K_DYNAMIC = "dynamic_color"
         const val K_FOLLOW_POWER_ON = "follow_power_on"
+        const val K_VIEW = "view_mode"
     }
 }

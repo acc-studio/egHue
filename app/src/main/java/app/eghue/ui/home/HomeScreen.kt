@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WifiOff
@@ -54,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.eghue.AppContainer
+import app.eghue.data.ViewMode
 import app.eghue.hue.ConnState
 import app.eghue.hue.GroupUi
 import app.eghue.hue.HueRepository
@@ -67,8 +70,9 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(c: AppContainer, onOpenSettings: () -> Unit) {
+fun HomeScreen(c: AppContainer, onOpenSettings: () -> Unit, onEditScene: ((String) -> Unit)? = null) {
     val repo = c.repository
+    val viewMode by c.settings.viewMode.collectAsStateWithLifecycle()
     val home by repo.home.collectAsStateWithLifecycle()
     val conn by repo.connection.collectAsStateWithLifecycle()
     val loaded by repo.loaded.collectAsStateWithLifecycle()
@@ -86,6 +90,13 @@ fun HomeScreen(c: AppContainer, onOpenSettings: () -> Unit) {
             TopAppBar(
                 title = { Text("Home", style = MaterialTheme.typography.headlineSmall) },
                 actions = {
+                    val full = viewMode == ViewMode.FULL
+                    IconButton(onClick = { c.settings.setViewMode(if (full) ViewMode.LITE else ViewMode.FULL) }) {
+                        Icon(
+                            if (full) Icons.Outlined.Bolt else Icons.Outlined.Apps,
+                            contentDescription = if (full) "Switch to Lite view" else "Switch to Full view",
+                        )
+                    }
                     IconButton(onClick = repo::allOff, enabled = home.lights.any { it.on }) {
                         Icon(Icons.Outlined.PowerSettingsNew, contentDescription = "Turn all lights off")
                     }
@@ -151,6 +162,7 @@ fun HomeScreen(c: AppContainer, onOpenSettings: () -> Unit) {
             home = home,
             repo = repo,
             onNavigate = { detail = it },
+            onEditScene = onEditScene,
         )
     }
 }

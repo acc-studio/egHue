@@ -1,0 +1,51 @@
+# Builds signed release APKs when a version tag (v1.2.3) is pushed and publishes a GitHub Release.
+# Installed egHue apps (github flavor) poll this repo's latest release and update themselves.
+#
+# Required repository secrets:
+#   KEYSTORE_BASE64      base64 of the release keystore (keep a backup: losing it breaks updates)
+#   KEYSTORE_PASSWORD    keystore and key password
+#   KEY_ALIAS            key alias (eghue)
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Test and build
+        env:
+          EGHUE_KEYSTORE: ${{ runner.temp }}/release.jks
+          EGHUE_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          EGHUE_KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          EGHUE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          chmod +x gradlew
+          ./gradlew testGithubReleaseUnitTest assembleGithubRelease bundlePlayRelease \
+            -PappVersion="$VERSION" -PupdateRepo="${{ github.repository }}"
+          mkdir dist
+          cp app/build/outputs/apk/github/release/app-github-release.apk "dist/egHue-$VERSION-github.apk"
+          cp app/build/outputs/bundle/playRelease/app-play-release.aab "dist/egHue-$VERSION-play.aab"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

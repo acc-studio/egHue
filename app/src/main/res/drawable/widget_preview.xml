@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/widget_preview_bg" />
+    <item android:left="8dp" android:right="8dp" android:top="8dp" android:bottom="72dp" android:drawable="@drawable/widget_preview_on" />
+    <item android:left="8dp" android:right="8dp" android:top="72dp" android:bottom="8dp" android:drawable="@drawable/widget_preview_off" />
+</layer-list>

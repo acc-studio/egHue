@@ -1,0 +1,477 @@
+package app.eghue.hue
+
+import android.content.Context
+import android.os.SystemClock
+import app.eghue.data.Settings
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
+import java.io.File
+import java.io.IOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
+
+sealed interface ConnState {
+    data object NotPaired : ConnState
+    data object Connecting : ConnState
+    data object Connected : ConnState
+    data class Offline(val reason: String) : ConnState
+    data object Unauthorized : ConnState
+}
+
+/**
+ * Single source of truth for bridge state.
+ *
+ * State = server resources (snapshot + live event stream) with short-lived optimistic overlays on
+ * top, so the UI reacts the instant you tap and isn't jerked back by in-flight events while a
+ * slider is moving. The last known state is cached on disk, so the app and widget open instantly.
+ */
+@OptIn(FlowPreview::class)
+class HueRepository(
+    context: Context,
+    private val settings: Settings,
+    private val client: HueClient,
+    private val discovery: Discovery,
+    private val network: NetworkMonitor,
+    private val scope: CoroutineScope,
+) {
+    private class Overlay(val patch: JsonObject, val until: Long)
+
+    private val lock = Any()
+    private var server: Map<String, JsonObject> = emptyMap()
+    private val overlays = HashMap<String, Overlay>()
+
+    private val _home = MutableStateFlow(HomeUi.Empty)
+    val home: StateFlow<HomeUi> = _home.asStateFlow()
+
+    private val _connection = MutableStateFlow<ConnState>(if (settings.paired.value) ConnState.Connecting else ConnState.NotPaired)
+    val connection: StateFlow<ConnState> = _connection.asStateFlow()
+
+    private val _loaded = MutableStateFlow(false)
+    /** True once any state (cache or live) is available. */
+    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
+
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val messages: SharedFlow<String> = _messages
+
+    /** Set when the last widget action couldn't reach the bridge. */
+    private val _widgetError = MutableStateFlow(false)
+    val widgetError: StateFlow<Boolean> = _widgetError.asStateFlow()
+
+    @Volatile private var lastSync = 0L
+    @Volatile private var foreground = false
+    private var loadJob: Job? = null
+    private var loopJob: Job? = null
+    private var stopJob: Job? = null
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+    private val persistRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val snapshotFile = File(context.filesDir, "snapshot.json")
+
+    private val queue = CommandQueue(scope, ::send, ::onCommandFailed)
+
+    fun init() {
+        loadJob = scope.launch(Dispatchers.IO) { loadSnapshot() }
+        scope.launch { persistRequests.debounce(800).collect { withContext(Dispatchers.IO) { saveSnapshot() } } }
+        scope.launch { network.changes.debounce(500).collect { if (foreground && settings.paired.value) restartLoop() } }
+        scope.launch {
+            settings.paired.drop(1).collect { paired ->
+                if (paired) {
+                    _connection.value = ConnState.Connecting
+                    if (foreground) restartLoop()
+                } else {
+                    loopJob?.cancel()
+                    synchronized(lock) { server = emptyMap(); overlays.clear() }
+                    publish()
+                    _loaded.value = false
+                    _connection.value = ConnState.NotPaired
+                    withContext(Dispatchers.IO) { snapshotFile.delete() }
+                }
+            }
+        }
+    }
+
+    suspend fun ensureLoaded() { loadJob?.join() }
+
+    // ---- Lifecycle & connection -----------------------------------------------------------------
+
+    /** The app (not the widget) is visible: keep a live connection. Drop it shortly after leaving. */
+    fun setForeground(fg: Boolean) {
+        foreground = fg
+        if (fg) {
+            stopJob?.cancel()
+            if (settings.paired.value && loopJob?.isActive != true) restartLoop()
+        } else {
+            stopJob = scope.launch {
+                delay(10_000)
+                loopJob?.cancel()
+                if (settings.paired.value) _connection.value = ConnState.Connecting
+            }
+        }
+    }
+
+    fun reconnectNow() { if (settings.paired.value) restartLoop() }
+
+    private fun restartLoop() {
+        loopJob?.cancel()
+        loopJob = scope.launch { connectionLoop() }
+    }
+
+    private suspend fun connectionLoop() {
+        var failures = 0
+        while (true) {
+            val t = target() ?: run { _connection.value = ConnState.NotPaired; return }
+            try {
+                refresh(t)
+                _connection.value = ConnState.Connected
+                failures = 0
+                client.stream(t, onOpen = {}, onEvents = ::applyEvents)
+                // The bridge closed the stream; reconnect (and resync) right away.
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: UnauthorizedException) {
+                _connection.value = ConnState.Unauthorized
+                return
+            } catch (e: Exception) {
+                android.util.Log.w("egHue", "Bridge connection failed", e)
+                failures++
+                _connection.value = ConnState.Offline(describe(e))
+                if (failures == 2 || failures % 4 == 0) rediscover()
+            }
+            val backoff = when (failures) { 0 -> 300L; 1 -> 1_000L; 2 -> 2_000L; 3 -> 4_000L; else -> 8_000L }
+            withTimeoutOrNull(backoff) { wake.receive() }
+        }
+    }
+
+    /** Looks for our bridge by id in case its IP address changed. */
+    private suspend fun rediscover(): Boolean {
+        val id = settings.bridgeId ?: return false
+        val found = discovery.discover(timeoutMs = 10_000).firstOrNull { it.id.equals(id, ignoreCase = true) }
+            ?: return false
+        if (found.host != settings.bridgeHost) settings.updateHost(found.host)
+        return true
+    }
+
+    /** Pull-to-refresh / settings "find bridge". Returns false if the bridge can't be reached. */
+    suspend fun refreshNow(): Boolean {
+        val t = target() ?: return false
+        return try {
+            refresh(t); true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: UnauthorizedException) {
+            _connection.value = ConnState.Unauthorized; false
+        } catch (e: Exception) {
+            if (rediscover()) { restartLoop(); true } else {
+                _messages.tryEmit("Can't reach your Hue Bridge")
+                false
+            }
+        } finally {
+            if (foreground && loopJob?.isActive != true) restartLoop()
+        }
+    }
+
+    /** Lightweight refresh for the widget when the app isn't holding a live connection. */
+    fun refreshIfStale(maxAgeMs: Long) {
+        if (loopJob?.isActive == true && _connection.value == ConnState.Connected) return
+        if (SystemClock.elapsedRealtime() - lastSync < maxAgeMs) return
+        val t = target() ?: return
+        scope.launch { runCatching { refresh(t) } }
+    }
+
+    suspend fun refresh(t: HueClient.Target? = target()) {
+        t ?: return
+        val list = client.getAll(t)
+        synchronized(lock) { server = list.mapNotNull { o -> o.str("id")?.let { it to o } }.toMap() }
+        lastSync = SystemClock.elapsedRealtime()
+        _loaded.value = true
+        publish()
+        persistRequests.tryEmit(Unit)
+    }
+
+    private fun applyEvents(events: JsonArray) {
+        synchronized(lock) {
+            val m = server.toMutableMap()
+            for (container in events.objects()) {
+                val kind = container.str("type")
+                for (d in container.arr("data")?.objects().orEmpty()) {
+                    val id = d.str("id") ?: continue
+                    when (kind) {
+                        "update" -> m[id]?.let { m[id] = deepMerge(it, d) }
+                        "add" -> m[id] = d
+                        "delete" -> m.remove(id)
+                    }
+                }
+            }
+            server = m
+        }
+        lastSync = SystemClock.elapsedRealtime()
+        publish()
+        persistRequests.tryEmit(Unit)
+    }
+
+    private fun target(): HueClient.Target? {
+        val h = settings.bridgeHost ?: return null
+        val k = settings.appKey ?: return null
+        return HueClient.Target(h, k)
+    }
+
+    // ---- State publication ----------------------------------------------------------------------
+
+    private fun publish() {
+        synchronized(lock) {
+            val now = SystemClock.elapsedRealtime()
+            overlays.entries.removeAll { it.value.until <= now }
+            val merged = if (overlays.isEmpty()) server.values else server.map { (id, v) ->
+                overlays[id]?.let { deepMerge(v, it.patch) } ?: v
+            }
+            _home.value = deriveHome(merged)
+        }
+    }
+
+    private fun addOverlays(patches: Map<String, JsonObject>) {
+        if (patches.isEmpty()) return
+        val until = SystemClock.elapsedRealtime() + OVERLAY_MS
+        synchronized(lock) {
+            for ((id, p) in patches) {
+                val existing = overlays[id]?.patch
+                overlays[id] = Overlay(if (existing != null) deepMerge(existing, p) else p, until)
+            }
+        }
+        publish()
+        scope.launch { delay(OVERLAY_MS + 20); publish() }
+    }
+
+    private fun commitToServer(patches: Map<String, JsonObject>) {
+        synchronized(lock) {
+            val m = server.toMutableMap()
+            for ((id, p) in patches) m[id]?.let { m[id] = deepMerge(it, p) }
+            server = m
+        }
+        publish()
+        persistRequests.tryEmit(Unit)
+    }
+
+    // ---- Commands -------------------------------------------------------------------------------
+
+    fun toggleLight(id: String) {
+        val l = _home.value.light(id) ?: return
+        setLightOn(id, !l.on)
+    }
+
+    fun setLightOn(id: String, on: Boolean) = lightCommand(id, onBody(on))
+    fun setLightBrightness(id: String, brightness: Float) = lightCommand(id, brightnessBody(brightness))
+    fun setLightXy(id: String, xy: Xy) = lightCommand(id, xyBody(xy), CT_INACTIVE)
+    fun setLightMirek(id: String, mirek: Int) = lightCommand(id, mirekBody(mirek), CT_ACTIVE)
+
+    private fun lightCommand(id: String, body: JsonObject, local: JsonObject? = null) {
+        addOverlays(mapOf(id to (local?.let { deepMerge(body, it) } ?: body)))
+        queue.submit("light", id, body)
+    }
+
+    fun toggleGroup(groupId: String) {
+        val g = _home.value.group(groupId) ?: return
+        setGroupOn(groupId, !g.on)
+    }
+
+    fun setGroupOn(groupId: String, on: Boolean) = groupCommand(groupId, onBody(on))
+    fun setGroupBrightness(groupId: String, brightness: Float) = groupCommand(groupId, brightnessBody(brightness))
+    fun setGroupXy(groupId: String, xy: Xy) = groupCommand(groupId, xyBody(xy), CT_INACTIVE)
+    fun setGroupMirek(groupId: String, mirek: Int) = groupCommand(groupId, mirekBody(mirek), CT_ACTIVE)
+
+    private fun groupCommand(groupId: String, body: JsonObject, local: JsonObject? = null) {
+        val g = _home.value.group(groupId) ?: return
+        val gl = g.groupedLightId ?: return
+        addOverlays(groupPatches(gl, g.lightIds, body, local))
+        queue.submit("grouped_light", gl, body)
+    }
+
+    fun allOff() {
+        val home = _home.value
+        val body = onBody(false)
+        val gl = home.homeGroupedLightId
+        if (gl != null) {
+            val patches = HashMap<String, JsonObject>()
+            home.lights.forEach { patches[it.id] = body }
+            (home.rooms + home.zones).mapNotNull { it.groupedLightId }.forEach { patches[it] = body }
+            patches[gl] = body
+            addOverlays(patches)
+            queue.submit("grouped_light", gl, body)
+        } else {
+            home.rooms.forEach { setGroupOn(it.id, false) }
+        }
+    }
+
+    fun recallScene(sceneId: String) {
+        val scene = synchronized(lock) { server[sceneId] } ?: return
+        val home = _home.value
+        val patches = HashMap<String, JsonObject>()
+        // Optimistically show the scene's target states and mark it active.
+        for (a in scene.arr("actions")?.objects().orEmpty()) {
+            val rid = a.ref("target")?.rid ?: continue
+            val action = a.obj("action") ?: continue
+            val ct = if (action.obj("color_temperature") != null) CT_ACTIVE else if (action.obj("color") != null) CT_INACTIVE else null
+            patches[rid] = ct?.let { deepMerge(memberPatch(action), it) } ?: memberPatch(action)
+        }
+        val groupId = scene.ref("group")?.rid
+        home.group(groupId ?: "")?.groupedLightId?.let { patches[it] = onBody(true) }
+        home.scenesFor(groupId ?: "").forEach { s ->
+            patches[s.id] = buildJsonObject {
+                putJsonObject("status") { put("active", if (s.id == sceneId) "static" else "inactive") }
+            }
+        }
+        addOverlays(patches)
+        queue.submit("scene", sceneId, RECALL_BODY)
+    }
+
+    private fun groupPatches(groupedLightId: String, members: List<String>, body: JsonObject, local: JsonObject?): Map<String, JsonObject> {
+        val full = local?.let { deepMerge(body, it) } ?: body
+        val member = memberPatch(full)
+        return buildMap {
+            put(groupedLightId, full)
+            members.forEach { put(it, member) }
+        }
+    }
+
+    private fun membersOf(groupedLightId: String): List<String> {
+        val home = _home.value
+        if (groupedLightId == home.homeGroupedLightId) return home.lights.map { it.id }
+        return home.groupByGroupedLight(groupedLightId)?.lightIds.orEmpty()
+    }
+
+    private suspend fun send(type: String, id: String, body: JsonObject) {
+        val t = target() ?: return
+        client.put(t, type, id, body)
+        when (type) {
+            "light" -> commitToServer(mapOf(id to body))
+            "grouped_light" -> commitToServer(groupPatches(id, membersOf(id), body, null))
+            "scene" -> if (_connection.value != ConnState.Connected) scope.launch { delay(700); runCatching { refresh() } }
+        }
+    }
+
+    private fun onCommandFailed(type: String, id: String, error: Throwable) {
+        synchronized(lock) { overlays.clear() }
+        publish()
+        if (error is UnauthorizedException) {
+            _connection.value = ConnState.Unauthorized
+            return
+        }
+        _messages.tryEmit(if (error is HueApiException) "Bridge said: ${error.message}" else "Couldn't reach your Hue Bridge")
+        if (foreground) wake.trySend(Unit) else scope.launch { runCatching { refresh() } }
+    }
+
+    // ---- Widget path ----------------------------------------------------------------------------
+
+    /**
+     * Toggles a room/zone ("g") or light ("l") on behalf of the widget, where the process may have
+     * just been started. Shows the change optimistically via [onOptimistic], then waits for the bridge.
+     */
+    suspend fun widgetToggle(kind: String, id: String, onOptimistic: suspend () -> Unit): Boolean {
+        ensureLoaded()
+        val t = target() ?: return false
+        val stale = SystemClock.elapsedRealtime() - lastSync > 15_000
+        return try {
+            if (kind == KIND_LIGHT) {
+                if (stale) withTimeoutOrNull(2_500) { runCatching { client.get(t, "light", id)?.let { commitServer(it) } } }
+                val l = _home.value.light(id) ?: return false
+                val body = onBody(!l.on)
+                addOverlays(mapOf(id to body))
+                onOptimistic()
+                client.put(t, "light", id, body)
+                commitToServer(mapOf(id to body))
+            } else {
+                val gl0 = _home.value.group(id)?.groupedLightId ?: return false
+                if (stale) withTimeoutOrNull(2_500) { runCatching { client.get(t, "grouped_light", gl0)?.let { commitServer(it) } } }
+                val g = _home.value.group(id) ?: return false
+                val gl = g.groupedLightId ?: return false
+                val body = onBody(!g.on)
+                addOverlays(groupPatches(gl, g.lightIds, body, null))
+                onOptimistic()
+                client.put(t, "grouped_light", gl, body)
+                commitToServer(groupPatches(gl, g.lightIds, body, null))
+            }
+            _widgetError.value = false
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            synchronized(lock) { overlays.clear() }
+            publish()
+            _widgetError.value = true
+            false
+        }
+    }
+
+    private fun commitServer(resource: JsonObject) {
+        val id = resource.str("id") ?: return
+        synchronized(lock) { server = server + (id to resource) }
+        publish()
+    }
+
+    // ---- Snapshot cache -------------------------------------------------------------------------
+
+    private fun loadSnapshot() {
+        val list = runCatching {
+            if (!snapshotFile.exists()) return
+            HueJson.parseToJsonElement(snapshotFile.readText()).jsonArray.objects()
+        }.getOrNull() ?: return
+        var applied = false
+        synchronized(lock) {
+            if (server.isEmpty()) {
+                server = list.mapNotNull { o -> o.str("id")?.let { it to o } }.toMap()
+                applied = true
+            }
+        }
+        if (applied) {
+            publish()
+            if (list.isNotEmpty()) _loaded.value = true
+        }
+    }
+
+    private fun saveSnapshot() {
+        val values = synchronized(lock) { server.values.toList() }
+        if (values.isEmpty()) return
+        runCatching {
+            val tmp = File(snapshotFile.parentFile, snapshotFile.name + ".tmp")
+            tmp.writeText(JsonArray(values).toString())
+            tmp.renameTo(snapshotFile)
+        }
+    }
+
+    private fun describe(e: Throwable): String = when (e) {
+        is ConnectException, is NoRouteToHostException, is SocketTimeoutException, is UnknownHostException ->
+            if (network.hasLan) "Can't reach your Hue Bridge" else "Not connected to Wi-Fi"
+        is SSLException -> "Secure connection to the bridge failed"
+        is IOException -> e.message ?: "Connection problem"
+        else -> "Connection problem"
+    }
+
+    companion object {
+        const val KIND_GROUP = "g"
+        const val KIND_LIGHT = "l"
+        private const val OVERLAY_MS = 1_500L
+    }
+}

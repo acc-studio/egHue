@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static preview shown in the launcher's widget picker. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_preview_bg"
+    android:orientation="vertical"
+    android:padding="6dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/widget_preview_on"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:text="Living room"
+        android:textColor="#1E1B18"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <FrameLayout android:layout_width="match_parent" android:layout_height="6dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/widget_preview_off"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:text="Kitchen"
+        android:textColor="#51443A"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <FrameLayout android:layout_width="match_parent" android:layout_height="6dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/widget_preview_off"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:text="Bedroom"
+        android:textColor="#51443A"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+</LinearLayout>

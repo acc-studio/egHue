@@ -263,7 +263,8 @@ it up on their own.
 | Rooms and zones from the bridge | ✅ Same rooms, zones and room types (icons) |
 | Individual lights | ✅ On the home screen |
 | On/off, brightness | ✅ One tap / one drag |
-| Colour and white ambience | ✅ Colour wheel, temperature bar, presets |
+| Colour and white ambience | ✅ Colour wheel, temperature bar, presets; a dot per light in Full view |
+| Dynamic scenes | ✅ *Play dynamically* for scenes with a palette |
 | Scenes (incl. Hue-app scenes) | ✅ View and activate, with the active scene shown |
 | Designed presets | ✅ Candlelit, Reading, Neon, Lounge; designed per fixture, saved as bridge scenes on first use |
 | All off | ✅ |

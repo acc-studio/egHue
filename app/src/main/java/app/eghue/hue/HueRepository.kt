@@ -367,6 +367,12 @@ class HueRepository(
         }
     }
 
+    /** Plays a scene with its colours slowly drifting through its palette. */
+    fun playDynamic(sceneId: String) {
+        recallScene(sceneId)
+        queue.submit("scene", sceneId, buildJsonObject { putJsonObject("recall") { put("action", "dynamic_palette") } })
+    }
+
     fun recallScene(sceneId: String) {
         val scene = synchronized(lock) { server[sceneId] } ?: return
         val home = _home.value

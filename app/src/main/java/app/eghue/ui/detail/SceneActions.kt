@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Animation
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
@@ -68,6 +69,7 @@ fun SceneActions(scene: SceneUi, group: GroupUi, repo: HueRepository, onDismiss:
             title = { Text(scene.name) },
             text = {
                 Column {
+                    if (scene.dynamic) MenuRow(Icons.Outlined.Animation, "Play dynamically") { onDismiss(); repo.playDynamic(scene.id) }
                     if (onEdit != null) MenuRow(Icons.Outlined.Tune, "Edit lights") { onDismiss(); onEdit(scene.id) }
                     MenuRow(Icons.Outlined.CameraAlt, "Update to current look") { step = "update" }
                     MenuRow(Icons.Outlined.DriveFileRenameOutline, "Rename") { step = "rename" }

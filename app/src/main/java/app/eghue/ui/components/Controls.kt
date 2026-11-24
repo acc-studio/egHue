@@ -400,3 +400,86 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
 fun Dot(color: Color, modifier: Modifier = Modifier) {
     Box(modifier.size(10.dp).clip(CircleShape).background(color))
 }
+
+/** One light on a [MultiColorWheel]. */
+data class WheelDot(val id: String, val color: Color, val label: String, val on: Boolean)
+
+/**
+ * A room's colour wheel with one dot per light (as in the Hue app). Drag a dot to change that light;
+ * tap or drag anywhere else to set every light to that colour.
+ */
+@Composable
+fun MultiColorWheel(
+    dots: List<WheelDot>,
+    onPickOne: (String, Color) -> Unit,
+    onPickAll: (Color) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pickOne by rememberUpdatedState(onPickOne)
+    val pickAll by rememberUpdatedState(onPickAll)
+    val current by rememberUpdatedState(dots)
+    // While dragging, the dragged dot ("*" = all) follows the finger rather than the (lagging) bridge.
+    var dragging by remember { mutableStateOf<String?>(null) }
+    var dragColor by remember { mutableStateOf<Color?>(null) }
+
+    fun colorAt(p: Offset, w: Float, h: Float): Color {
+        val cx = w / 2; val cy = h / 2
+        val r = min(cx, cy)
+        val dx = p.x - cx; val dy = p.y - cy
+        val angle = (Math.toDegrees(atan2(dy, dx).toDouble()).toFloat() + 360f) % 360f
+        return Color.hsv(angle, (hypot(dx, dy) / r).coerceIn(0f, 1f), 1f)
+    }
+    fun posOf(c: Color, center: Offset, r: Float, inset: Float): Offset {
+        val hsv = FloatArray(3).also { android.graphics.Color.colorToHSV(c.toArgb(), it) }
+        val a = Math.toRadians(hsv[0].toDouble())
+        val d = hsv[1] * (r - inset)
+        return Offset(center.x + (cos(a) * d).toFloat(), center.y + (sin(a) * d).toFloat())
+    }
+    fun dotAt(p: Offset, w: Float, h: Float, grab: Float): String? {
+        val center = Offset(w / 2, h / 2)
+        val r = min(w, h) / 2
+        return current.minByOrNull { (posOf(it.color, center, r, grab / 2) - p).getDistance() }
+            ?.takeIf { (posOf(it.color, center, r, grab / 2) - p).getDistance() <= grab }?.id
+    }
+
+    Canvas(
+        modifier
+            .widthIn(max = 300.dp)
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .semantics { contentDescription = "Colour wheel with a dot for each light" }
+            .pointerInput(Unit) {
+                detectTapGestures { o -> pickAll(colorAt(o, size.width.toFloat(), size.height.toFloat())) }
+            }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { o ->
+                        val w = size.width.toFloat(); val h = size.height.toFloat()
+                        dragging = dotAt(o, w, h, 28.dp.toPx()) ?: "*"
+                        dragColor = colorAt(o, w, h)
+                    },
+                    onDragEnd = { dragging = null; dragColor = null },
+                    onDragCancel = { dragging = null; dragColor = null },
+                ) { ch, _ ->
+                    ch.consume()
+                    val c = colorAt(ch.position, size.width.toFloat(), size.height.toFloat())
+                    dragColor = c
+                    when (val d = dragging) { "*", null -> pickAll(c); else -> pickOne(d, c) }
+                }
+            },
+    ) {
+        val r = size.minDimension / 2
+        drawCircle(Brush.sweepGradient(wheelHues, center), r, center)
+        drawCircle(Brush.radialGradient(listOf(Color.White, Color.White.copy(alpha = 0f)), center, r), r, center)
+        val inset = 14.dp.toPx() / 2
+        for (dot in dots) {
+            val c = if (dragColor != null && (dragging == "*" || dragging == dot.id)) dragColor!! else dot.color
+            val p = posOf(c, center, r, inset)
+            val big = dragging == dot.id
+            val rad = (if (big) 16 else 12).dp.toPx()
+            drawCircle(if (dot.on) c else c.copy(alpha = 0.45f), rad, p)
+            drawCircle(Color.White, rad + 1.dp.toPx(), p, style = Stroke(width = 3.dp.toPx()))
+            drawCircle(Color.Black.copy(alpha = 0.2f), rad + 2.5.dp.toPx(), p, style = Stroke(width = 1.dp.toPx()))
+        }
+    }
+}

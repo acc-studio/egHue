@@ -11,6 +11,23 @@ The app has two faces:
 
 ---
 
+## Iteration 7 · v0.10.0 · A dot per light, and dynamic scenes
+
+**Why:** colouring a room light by light is the Hue app's signature control; one colour for the
+whole room is limiting once you have several colour bulbs.
+
+**What changed**
+- **Multi-dot colour wheel** (Full view, rooms and zones with two or more colour lights): each
+  light is a dot in its own colour. Drag a dot to recolour just that light (the dot grows while
+  held); tap or drag anywhere else to set them all. Off lights show as faded dots.
+- **Play dynamically:** scenes with a colour palette (most Hue-gallery scenes) get *Play
+  dynamically* in their long-press menu, so the colours drift slowly within the palette.
+
+**Verified** on the emulator: Living room's two colour lamps shared one position; dragging the
+dot to blue moved one lamp (light PUTs) and left the other orange. 56 unit tests pass.
+
+---
+
 ## Iteration 6 · v0.9.0 · Zones
 
 **Why:** zones ("Downstairs", "Reading corner", "TV area") are how people group lights across

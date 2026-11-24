@@ -125,6 +125,8 @@ data class SceneUi(
     val targets: Set<String> = emptySet(),
     /** A preset egHue used to have; hidden and cleaned up. */
     val retired: Boolean = false,
+    /** The scene has a colour palette, so it can play dynamically (colours slowly drifting). */
+    val dynamic: Boolean = false,
 )
 
 data class BridgeUi(val name: String?, val model: String?, val software: String?)
@@ -373,6 +375,7 @@ private fun deriveScene(s: JsonObject): SceneUi? {
         appdata = s.obj("metadata")?.str("appdata"),
         targets = s.arr("actions")?.objects().orEmpty().mapNotNull { it.ref("target")?.rid }.toSet(),
         retired = Preset.isRetired(s.obj("metadata")?.str("appdata")),
+        dynamic = s.obj("palette")?.let { p -> (p.arr("color")?.size ?: 0) + (p.arr("color_temperature")?.size ?: 0) > 0 } ?: false,
     )
 }
 

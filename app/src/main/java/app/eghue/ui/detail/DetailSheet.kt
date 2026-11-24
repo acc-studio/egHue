@@ -66,6 +66,8 @@ import app.eghue.hue.Xy
 import app.eghue.ui.components.BrightnessBar
 import app.eghue.ui.components.SceneGrid
 import app.eghue.ui.components.ColorWheel
+import app.eghue.ui.components.MultiColorWheel
+import app.eghue.ui.components.WheelDot
 import app.eghue.ui.components.NameDialog
 import app.eghue.ui.components.SectionTitle
 import app.eghue.ui.components.TemperatureBar
@@ -159,6 +161,9 @@ private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, full: Boo
         mirekMax = g.mirekMax,
         onXy = { repo.setGroupXy(g.id, it) },
         onMirek = { repo.setGroupMirek(g.id, it) },
+        // Full view: a dot per colour light, each draggable on its own.
+        perLight = if (full) g.lightIds.mapNotNull(home::light).filter { it.supportsColor }.takeIf { it.size > 1 } else null,
+        onLightXy = { id, xy -> repo.setLightXy(id, xy) },
     )
     val lights = g.lightIds.mapNotNull { home.light(it) }
     var editPowerOn by remember { mutableStateOf(false) }
@@ -303,6 +308,8 @@ private fun ColorSection(
     mirekMax: Int,
     onXy: (Xy) -> Unit,
     onMirek: (Int) -> Unit,
+    perLight: List<LightUi>? = null,
+    onLightXy: (String, Xy) -> Unit = { _, _ -> },
 ) {
     if (!supportsColor && !supportsCt) return
     var tab by rememberSaveable { mutableStateOf(if (supportsColor && !ctActive) 1 else 0) }
@@ -318,7 +325,21 @@ private fun ColorSection(
         }
     }
     val showColor = supportsColor && (!supportsCt || tab == 1)
-    if (showColor) {
+    if (showColor && perLight != null) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            MultiColorWheel(
+                dots = perLight.map { WheelDot(it.id, Color(it.color), it.name, it.on) },
+                onPickOne = { id, c -> onLightXy(id, ColorUtil.rgbToXy(c.toArgb())) },
+                onPickAll = { onXy(ColorUtil.rgbToXy(it.toArgb())) },
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+        }
+        Text(
+            "Drag a dot to change one light; tap anywhere to set them all.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    } else if (showColor) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             ColorWheel(
                 current = if (!ctActive) color else null,

@@ -11,6 +11,24 @@ The app has two faces:
 
 ---
 
+## Iteration 11 · v0.14.0 · Scenes on the widget
+
+**Why:** the widget is the fastest way into the lights, but it could only switch rooms. Playing a
+scene from the home screen is the next most common thing.
+
+**What changed**
+- Widget setup has a **Scenes (tap plays)** section: any scene or saved preset, labelled
+  "Relax · Living room".
+- Scene tiles always wear the scene's colours (they're buttons, not switches) and show ▶, or ✓
+  when that scene is active. One tap plays it, from a cold start too.
+- The widget refreshes when the active scene changes.
+
+**Verified** on the emulator: the widget setup screen lists scenes with their rooms. The tap path
+reuses the widget's cold-start toggle flow (resync if stale, optimistic tile, then bridge).
+63 unit tests pass.
+
+---
+
 ## Iteration 10 · v0.13.0 · Polish and hardening
 
 **Why:** after a run of features, a pass on rough edges and things a real bridge might do

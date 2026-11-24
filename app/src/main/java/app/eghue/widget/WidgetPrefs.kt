@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.roundToInt
 
-/** Which rooms/zones ("g:<id>") and lights ("l:<id>") each widget instance shows, in order. */
+/** Which rooms/zones ("g:<id>"), lights ("l:<id>") and scenes ("s:<id>") each widget instance shows, in order. */
 class WidgetPrefs(context: Context) {
     private val prefs = context.getSharedPreferences("widgets", Context.MODE_PRIVATE)
     private val flows = HashMap<Int, MutableStateFlow<List<String>>>()
@@ -36,6 +36,7 @@ class WidgetPrefs(context: Context) {
         var h = 17
         for (g in home.rooms + home.zones) h = 31 * h + (g.id + g.name + g.on + g.brightness.roundToInt() + g.color).hashCode()
         for (l in home.lights) h = 31 * h + (l.id + l.name + l.on + l.brightness.roundToInt() + l.color + l.reachable).hashCode()
+        for (s in home.scenes.values.flatten()) h = 31 * h + (s.id + s.name + s.active).hashCode()
         return h
     }
 

@@ -74,6 +74,10 @@ fun resolveItems(home: HomeUi, selection: List<String>): List<WidgetItem> = sele
         HueRepository.KIND_LIGHT -> home.light(id)?.let {
             WidgetItem(kind, id, it.name, it.on, it.brightness.roundToInt(), it.color, it.reachable)
         }
+        HueRepository.KIND_SCENE -> home.scenes.values.flatten().firstOrNull { it.id == id }?.let { s ->
+            val room = home.group(s.groupId)?.name
+            WidgetItem(kind, id, if (room != null) "${s.name} · $room" else s.name, s.active, 0, ColorUtil.average(s.colors), true)
+        }
         else -> null
     }
 }
@@ -170,12 +174,16 @@ private fun Tiles(items: List<WidgetItem>, size: DpSize, error: Boolean) {
 
 @Composable
 private fun Tile(item: WidgetItem, modifier: GlanceModifier, compact: Boolean) {
+    val scene = item.kind == HueRepository.KIND_SCENE
     val lit = ColorUtil.blend(item.color, 0xFFFFFFFF.toInt(), 0.12f)
-    val bg: ColorProvider = if (item.on) ColorProvider(Color(lit)) else GlanceTheme.colors.secondaryContainer
-    val fg: ColorProvider = if (item.on) {
+    // Scene tiles always wear their colours: they're buttons, not switches.
+    val coloured = item.on || scene
+    val bg: ColorProvider = if (coloured) ColorProvider(Color(lit)) else GlanceTheme.colors.secondaryContainer
+    val fg: ColorProvider = if (coloured) {
         ColorProvider(if (ColorUtil.prefersDarkText(lit)) Color(0xFF1E1B18) else Color.White)
     } else GlanceTheme.colors.onSecondaryContainer
     val state = when {
+        scene -> if (item.on) "✓" else "▶"
         !item.available -> "—"
         item.on -> "${item.brightness}%"
         else -> "Off"

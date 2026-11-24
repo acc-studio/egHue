@@ -48,6 +48,8 @@ import app.eghue.container
 import app.eghue.hue.HueRepository
 import app.eghue.ui.AppTheme
 import app.eghue.ui.MainActivity
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import app.eghue.ui.components.groupIcon
 import app.eghue.ui.components.lightIcon
 import kotlinx.coroutines.launch
@@ -120,6 +122,11 @@ private fun ComponentActivity.ConfigScreen(
         "Rooms" to home.rooms.map { Option("${HueRepository.KIND_GROUP}:${it.id}", it.name, groupIcon(it.archetype, it.kind)) },
         "Zones" to home.zones.map { Option("${HueRepository.KIND_GROUP}:${it.id}", it.name, groupIcon(it.archetype, it.kind)) },
         "Lights" to home.lights.map { Option("${HueRepository.KIND_LIGHT}:${it.id}", it.name, lightIcon(true)) },
+        "Scenes (tap plays)" to (home.rooms + home.zones).flatMap { g ->
+            home.scenesFor(g.id).filter { !it.retired }.map { s ->
+                Option("${HueRepository.KIND_SCENE}:${s.id}", "${s.name} · ${g.name}", Icons.Outlined.AutoAwesome)
+            }
+        },
     ).filter { it.second.isNotEmpty() }
     // Keep display order (rooms, zones, lights) regardless of tap order.
     val order = sections.flatMap { s -> s.second.map { it.key } }

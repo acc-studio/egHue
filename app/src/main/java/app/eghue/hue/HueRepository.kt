@@ -374,7 +374,13 @@ class HueRepository(
     }
 
     fun recallScene(sceneId: String) {
-        val scene = synchronized(lock) { server[sceneId] } ?: return
+        if (!recallSceneOptimistic(sceneId)) return
+        queue.submit("scene", sceneId, RECALL_BODY)
+    }
+
+    /** Shows [sceneId]'s light states and marks it active, before the bridge confirms. */
+    private fun recallSceneOptimistic(sceneId: String): Boolean {
+        val scene = synchronized(lock) { server[sceneId] } ?: return false
         val home = _home.value
         val patches = HashMap<String, JsonObject>()
         // Optimistically show the scene's target states and mark it active.
@@ -392,7 +398,7 @@ class HueRepository(
             }
         }
         addOverlays(patches)
-        queue.submit("scene", sceneId, RECALL_BODY)
+        return true
     }
 
     /**
@@ -902,7 +908,12 @@ class HueRepository(
         // room brightness is derived from them) before deciding what the toggle should do.
         if (SystemClock.elapsedRealtime() - lastSync > 15_000) withTimeoutOrNull(2_500) { runCatching { refresh(t) } }
         return try {
-            if (kind == KIND_LIGHT) {
+            if (kind == KIND_SCENE) {
+                if (synchronized(lock) { server[id] } == null) return false
+                recallSceneOptimistic(id)
+                onOptimistic()
+                client.put(t, "scene", id, RECALL_BODY)
+            } else if (kind == KIND_LIGHT) {
                 val l = _home.value.light(id) ?: return false
                 val body = if (l.on) onBody(false) else switchOnBody(l, settings.followPowerOn.value)
                 addOverlays(mapOf(id to body))
@@ -999,6 +1010,7 @@ class HueRepository(
     companion object {
         const val KIND_GROUP = "g"
         const val KIND_LIGHT = "l"
+        const val KIND_SCENE = "s"
         private const val OVERLAY_MS = 1_500L
         private val IDENTIFY_BODY = buildJsonObject { putJsonObject("identify") { put("action", "identify") } }
     }

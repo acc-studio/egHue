@@ -271,7 +271,7 @@ it up on their own.
 | Power-on behaviour per light | ✅ All four presets incl. custom; also per room |
 | Remote / switch button setup | ✅ Press & hold per button: toggle, scenes, scene cycle, dimming, all off |
 | Live sync with other apps and switches | ✅ Event stream |
-| Widget | ✅ Configurable, one-tap |
+| Widget | ✅ Configurable, one-tap; rooms, zones, lights and scenes |
 | Quick Settings tiles, launcher shortcuts | ✅ All off; one room (chosen in Settings); long-press icon for rooms |
 | Light/dark/system theme | ✅ Plus Material You |
 | Creating or editing your own scenes | ✅ Save current look, rename, update, delete; full scene editor in Full view |

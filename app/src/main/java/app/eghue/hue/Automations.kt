@@ -26,6 +26,8 @@ enum class AutoKind(val title: String) {
     TIMER("Sleep timer"),
     /** Something happens at a time: on, off or a scene. */
     AT_TIME("At a time"),
+    /** One step of the natural-light day (see [Automations.naturalLight]). */
+    NATURAL("Natural light"),
     /** A schedule made by another app. */
     OTHER("Schedule"),
 }
@@ -36,6 +38,8 @@ sealed interface AutoAction {
     data class On(val brightness: Int = 100, val mirek: Int? = null) : AutoAction
     /** [sceneV1] is the scene's legacy id without "/scenes/". */
     data class Scene(val sceneV1: String) : AutoAction
+    /** Changes brightness and white of lights that are on; lights that are off stay off. */
+    data class Adjust(val brightness: Int, val mirek: Int) : AutoAction
 }
 
 sealed interface AutoWhen {
@@ -95,6 +99,10 @@ object Automations {
                     a.mirek?.let { put("ct", it) }
                 }
                 is AutoAction.Scene -> put("scene", a.sceneV1)
+                is AutoAction.Adjust -> {
+                    put("bri", (a.brightness.coerceIn(1, 100) * 2.54).roundToInt().coerceIn(1, 254))
+                    put("ct", a.mirek)
+                }
             }
             if (fade > 0) put("transitiontime", fade * 600)
         }
@@ -155,6 +163,8 @@ object Automations {
         val action = when {
             body.str("scene") != null -> AutoAction.Scene(body.str("scene")!!)
             body.bool("on") == false -> AutoAction.Off
+            body.bool("on") == null && body.int("ct") != null ->
+                AutoAction.Adjust(((body.int("bri") ?: 254) / 2.54).roundToInt().coerceIn(1, 100), body.int("ct")!!)
             body.bool("on") == true || body.int("bri") != null ->
                 AutoAction.On(((body.int("bri") ?: 254) / 2.54).roundToInt().coerceIn(1, 100), body.int("ct"))
             else -> return null
@@ -178,6 +188,22 @@ object Automations {
             else -> return null
         }
         return AutoSpec(kind, target, names(target) ?: target, action, whenever, fade)
+    }
+
+    /**
+     * A day of warm natural light: whites drift from a crisp-but-warm morning to candlelight at night.
+     * Each step adjusts only lights that are on, over 10 minutes, every day.
+     */
+    val naturalLight: List<Pair<LocalTime, AutoAction.Adjust>> = listOf(
+        LocalTime.of(7, 0) to AutoAction.Adjust(100, 1_000_000 / 3300),
+        LocalTime.of(12, 0) to AutoAction.Adjust(100, 1_000_000 / 3500),
+        LocalTime.of(17, 0) to AutoAction.Adjust(85, 1_000_000 / 2900),
+        LocalTime.of(20, 0) to AutoAction.Adjust(65, 1_000_000 / 2400),
+        LocalTime.of(22, 30) to AutoAction.Adjust(35, 1_000_000 / 2000),
+    )
+
+    fun naturalLightSpecs(targetV1: String, targetName: String): List<AutoSpec> = naturalLight.map { (time, action) ->
+        AutoSpec(AutoKind.NATURAL, targetV1, targetName, action, AutoWhen.Daily(time, java.time.DayOfWeek.entries.toSet()), fadeMinutes = 10)
     }
 
     /** "HH:MM:SS" to a duration. */

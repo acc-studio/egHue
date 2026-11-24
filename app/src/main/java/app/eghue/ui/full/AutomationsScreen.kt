@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.HourglassBottom
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -58,12 +59,14 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 fun kindIcon(k: AutoKind): ImageVector = when (k) {
     AutoKind.WAKE -> Icons.Outlined.Alarm
     AutoKind.BEDTIME -> Icons.Outlined.Bedtime
     AutoKind.TIMER -> Icons.Outlined.HourglassBottom
     AutoKind.AT_TIME -> Icons.Outlined.Event
+    AutoKind.NATURAL -> Icons.Outlined.WbSunny
     AutoKind.OTHER -> Icons.Outlined.Schedule
 }
 
@@ -84,9 +87,13 @@ fun describe(a: Automation, now: Instant = Instant.now()): String {
         AutoAction.Off -> if (s.kind != AutoKind.TIMER) parts += if (s.fadeMinutes > 0) "fade out over ${s.fadeMinutes} min" else "off"
         is AutoAction.On -> parts += if (s.kind == AutoKind.WAKE && s.fadeMinutes > 0) "${s.fadeMinutes} min sunrise to ${act.brightness}%" else "on at ${act.brightness}%"
         is AutoAction.Scene -> parts += "scene"
+        is AutoAction.Adjust -> parts += "${kelvin(act.mirek)} K at ${act.brightness}% if on"
     }
     return parts.joinToString(" · ")
 }
+
+/** Colour temperature in kelvin, rounded to 100 K as people talk about it. */
+fun kelvin(mirek: Int): Int = ((1_000_000.0 / mirek) / 100).roundToInt() * 100
 
 fun formatLeft(d: Duration): String {
     val m = (d.seconds + 59) / 60
@@ -103,6 +110,8 @@ fun AutomationsScreen(c: AppContainer, onOpenSettings: () -> Unit, onEdit: (Stri
     var refreshing by remember { mutableStateOf(false) }
     var loadedOnce by remember { mutableStateOf(false) }
     var now by remember { mutableStateOf(Instant.now()) }
+    var natural by remember { mutableStateOf(false) }
+    val home by repo.home.collectAsStateWithLifecycle()
     LaunchedEffect(repo) { repo.messages.collect { snackbar.showSnackbar(it, withDismissAction = true) } }
     LaunchedEffect(Unit) {
         repo.loadAutomations(); loadedOnce = true
@@ -115,7 +124,10 @@ fun AutomationsScreen(c: AppContainer, onOpenSettings: () -> Unit, onEdit: (Stri
         topBar = {
             TopAppBar(
                 title = { Text("Automations", style = MaterialTheme.typography.headlineSmall) },
-                actions = { IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, "Settings") } },
+                actions = {
+                    IconButton(onClick = { natural = true }) { Icon(Icons.Outlined.WbSunny, "Set up natural light") }
+                    IconButton(onClick = onOpenSettings) { Icon(Icons.Outlined.Settings, "Settings") }
+                },
             )
         },
         floatingActionButton = {
@@ -143,6 +155,10 @@ fun AutomationsScreen(c: AppContainer, onOpenSettings: () -> Unit, onEdit: (Stri
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Spacer(Modifier.size(12.dp))
+                        androidx.compose.material3.FilledTonalButton(onClick = { natural = true }) {
+                            Icon(Icons.Outlined.WbSunny, null); Spacer(Modifier.size(8.dp)); Text("Set up natural light")
+                        }
                     }
                 }
                 items(list, key = { it.id }) { a ->
@@ -155,6 +171,43 @@ fun AutomationsScreen(c: AppContainer, onOpenSettings: () -> Unit, onEdit: (Stri
             }
         }
     }
+    if (natural) {
+        val targets = (home.rooms + home.zones).filter { it.idV1 != null && it.lightIds.isNotEmpty() }.map { it.idV1!! to it.name } +
+            ("/groups/0" to "Whole home")
+        NaturalLightDialog(targets, onDismiss = { natural = false }) { v1 ->
+            natural = false
+            scope.launch { repo.createNaturalLight(v1) }
+        }
+    }
+}
+
+@Composable
+private fun NaturalLightDialog(targets: List<Pair<String, String>>, onDismiss: () -> Unit, onPick: (String) -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Outlined.WbSunny, null) },
+        title = { Text("Natural light") },
+        text = {
+            Column {
+                Text(
+                    "Lights that are on follow the day: 3300 K in the morning, 3500 K at midday, then warmer and " +
+                        "dimmer from 17:00 to candlelight at 22:30. Lights that are off stay off. Five daily steps, " +
+                        "each gliding over 10 minutes; edit or remove any of them later.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.size(8.dp))
+                targets.forEach { (v1, name) ->
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth().clickable { onPick(v1) }.padding(vertical = 10.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

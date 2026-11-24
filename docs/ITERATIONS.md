@@ -11,6 +11,35 @@ The app has two faces:
 
 ---
 
+## Iteration 8 · v0.11.0 · Natural light
+
+**Why:** you like warm light, but the right warmth changes through the day. A rhythm that runs
+by itself beats remembering to change it.
+
+**What changed**
+- **Natural light** (Automations ☀, or the button on the empty screen): pick a room, zone or the
+  whole home and egHue adds five daily steps on the bridge:
+
+  | Time | White | Brightness |
+  |---|---|---|
+  | 07:00 | 3300 K | 100% |
+  | 12:00 | 3500 K | 100% |
+  | 17:00 | 2900 K | 85% |
+  | 20:00 | 2400 K | 65% |
+  | 22:30 | 2000 K | 35% |
+
+  Each step glides over 10 minutes and only changes lights that are **on**: nothing switches on
+  by itself. Each step can be edited, paused or deleted like any automation.
+- **Adjust if on** is now an action for any timed automation (brightness and white, never
+  switching lights on).
+- Kelvin values are shown rounded to 100 K.
+
+**Verified** on the emulator: natural light for the Living room created five schedules, listed
+as "07:00 · Every day · 3300 K at 100% if on" and so on. Unit tests: Adjust never sends `on`,
+round-trips; natural-light steps get warmer through the day. 58 tests.
+
+---
+
 ## Iteration 7 · v0.10.0 · A dot per light, and dynamic scenes
 
 **Why:** colouring a room light by light is the Hue app's signature control; one colour for the

@@ -80,7 +80,9 @@ fun AutomationEditorScreen(c: AppContainer, id: String?, onDone: () -> Unit) {
         (home.rooms + home.zones).filter { it.idV1 != null && it.lightIds.isNotEmpty() }.forEach { add(it.idV1!! to it.name) }
         add("/groups/0" to "Whole home")
     }
-    var kind by rememberSaveable { mutableStateOf(spec?.kind ?: AutoKind.WAKE) }
+    // Natural-light steps edit as timed actions, and stay natural-light steps when saved.
+    val wasNatural = spec?.kind == AutoKind.NATURAL
+    var kind by rememberSaveable { mutableStateOf(spec?.kind?.takeIf { !wasNatural } ?: if (wasNatural) AutoKind.AT_TIME else AutoKind.WAKE) }
     var target by rememberSaveable { mutableStateOf(spec?.targetV1 ?: targets.first().first) }
     val daily = spec?.whenever as? AutoWhen.Daily
     var hour by rememberSaveable { mutableIntStateOf(daily?.time?.hour ?: 7) }
@@ -91,11 +93,12 @@ fun AutomationEditorScreen(c: AppContainer, id: String?, onDone: () -> Unit) {
     var fade by rememberSaveable { mutableIntStateOf(spec?.fadeMinutes?.takeIf { it > 0 } ?: 30) }
     var timerMinutes by rememberSaveable { mutableIntStateOf((spec?.whenever as? AutoWhen.In)?.minutes ?: 30) }
     val on = spec?.action as? AutoAction.On
-    var brightness by rememberSaveable { mutableIntStateOf(on?.brightness ?: 100) }
-    var mirek by rememberSaveable { mutableIntStateOf(on?.mirek ?: 370) }
+    val adjust = spec?.action as? AutoAction.Adjust
+    var brightness by rememberSaveable { mutableIntStateOf(on?.brightness ?: adjust?.brightness ?: 100) }
+    var mirek by rememberSaveable { mutableIntStateOf(on?.mirek ?: adjust?.mirek ?: 370) }
     // For "At a time": "on", "off" or a scene's v1 id.
     var doWhat by rememberSaveable {
-        mutableStateOf(when (val a = spec?.action) { AutoAction.Off -> "off"; is AutoAction.Scene -> a.sceneV1; else -> "on" })
+        mutableStateOf(when (val a = spec?.action) { AutoAction.Off -> "off"; is AutoAction.Scene -> a.sceneV1; is AutoAction.Adjust -> "adjust"; else -> "on" })
     }
     var pickTime by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -110,9 +113,16 @@ fun AutomationEditorScreen(c: AppContainer, id: String?, onDone: () -> Unit) {
             AutoKind.BEDTIME -> AutoSpec(kind, target, name, AutoAction.Off, AutoWhen.Daily(time, dayset), fade)
             AutoKind.TIMER -> AutoSpec(kind, target, name, AutoAction.Off, AutoWhen.In(timerMinutes), 1)
             else -> AutoSpec(
-                AutoKind.AT_TIME, target, name,
-                when (doWhat) { "on" -> AutoAction.On(brightness, mirek); "off" -> AutoAction.Off; else -> AutoAction.Scene(doWhat) },
+                if (wasNatural && doWhat == "adjust") AutoKind.NATURAL else AutoKind.AT_TIME, target, name,
+                when (doWhat) {
+                    "on" -> AutoAction.On(brightness, mirek)
+                    "off" -> AutoAction.Off
+                    "adjust" -> AutoAction.Adjust(brightness, mirek)
+                    else -> AutoAction.Scene(doWhat)
+                },
                 AutoWhen.Daily(time, dayset),
+                // Adjustments glide rather than jump.
+                fadeMinutes = if (doWhat == "adjust") (spec?.fadeMinutes ?: 10) else 0,
             )
         }
     }
@@ -217,6 +227,7 @@ fun AutomationEditorScreen(c: AppContainer, id: String?, onDone: () -> Unit) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = doWhat == "on", onClick = { doWhat = "on" }, label = { Text("Turn on") })
                     FilterChip(selected = doWhat == "off", onClick = { doWhat = "off" }, label = { Text("Turn off") })
+                    FilterChip(selected = doWhat == "adjust", onClick = { doWhat = "adjust" }, label = { Text("Adjust if on") })
                     scenes.forEach { s ->
                         val v1 = s.idV1!!.removePrefix("/scenes/")
                         FilterChip(
@@ -229,7 +240,7 @@ fun AutomationEditorScreen(c: AppContainer, id: String?, onDone: () -> Unit) {
                 }
             }
 
-            if (kind == AutoKind.WAKE || (kind == AutoKind.AT_TIME && doWhat == "on")) {
+            if (kind == AutoKind.WAKE || (kind == AutoKind.AT_TIME && (doWhat == "on" || doWhat == "adjust"))) {
                 SectionTitle("Brightness · $brightness%")
                 Slider(value = brightness.toFloat(), onValueChange = { brightness = it.roundToInt() }, valueRange = 1f..100f)
                 SectionTitle("White")

@@ -88,4 +88,21 @@ class AutomationsTest {
         assertEquals("Mon, Fri", Automations.describeDays(setOf(FRIDAY, MONDAY)))
         assertEquals("Once", Automations.describeDays(emptySet()))
     }
+
+    @Test fun adjustChangesOnlyLightsThatAreOn() {
+        val spec = AutoSpec(AutoKind.AT_TIME, "/groups/3", "Bedroom", AutoAction.Adjust(65, 416), AutoWhen.Daily(LocalTime.of(20, 0), weekdays), 10)
+        val body = Automations.toJson(spec, "KEY").obj("command")!!.obj("body")!!
+        assertNull("must not switch lights on", body["on"])
+        assertEquals(416, body.int("ct"))
+        assertEquals(spec, roundTrip(spec).spec)
+    }
+
+    @Test fun naturalLightGetsWarmerThroughTheDay() {
+        val specs = Automations.naturalLightSpecs("/groups/0", "Whole home")
+        assertEquals(5, specs.size)
+        val mireks = specs.map { (it.action as AutoAction.Adjust).mirek }
+        assertEquals(mireks.drop(1), mireks.drop(1).sorted())
+        assertEquals(AutoKind.NATURAL, specs.first().kind)
+        specs.forEach { assertEquals("W127/T", Automations.toJson(it, "K").str("localtime")!!.take(6)) }
+    }
 }

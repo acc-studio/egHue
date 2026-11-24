@@ -604,6 +604,14 @@ class HueRepository(
         true
     } ?: false
 
+    /** Creates the five daily steps of [Automations.naturalLight] for [targetV1]. */
+    suspend fun createNaturalLight(targetV1: String): Boolean = sceneOp("set up natural light") { t ->
+        val name = nameOfV1(targetV1) ?: "lights"
+        for (spec in Automations.naturalLightSpecs(targetV1, name)) client.v1Post(t, "schedules", Automations.toJson(spec, t.key))
+        loadAutomations()
+        true
+    } ?: false
+
     suspend fun setAutomationEnabled(id: String, enabled: Boolean): Boolean = sceneOp("change the automation") { t ->
         _automations.value = _automations.value.map { if (it.id == id) it.copy(enabled = enabled) else it }
         client.v1Put(t, "schedules/$id", buildJsonObject { put("status", if (enabled) "enabled" else "disabled") })

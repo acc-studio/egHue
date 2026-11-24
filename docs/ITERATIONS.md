@@ -11,6 +11,29 @@ The app has two faces:
 
 ---
 
+## Iteration 9 · v0.12.0 · Motion sensors that switch lights
+
+**Why:** a motion sensor was only a reading in the Devices tab. Its real job is switching the
+hallway light on when you walk in.
+
+**What changed**
+- Tap a motion sensor in **Devices** to set what motion does:
+  - which room or zone, at what brightness and white;
+  - **at night** (from 22:00/23:00/00:00 to 06:00/07:00/08:00): same as day, a 5% night light,
+    dim 20%, or stay off (night light is always the warmest white);
+  - **turn off** after 1 to 30 minutes without motion (fading over 2 s);
+  - **only when it's dark**, using the sensor's own light reading.
+- The room is guessed from the sensor's name ("Hallway sensor" → Hallway).
+- Stored as bridge rules named `egHue motion <n> on/night/off`, so it runs with every phone off.
+  Saving writes the new rules before removing the old; *Stop using this sensor for lights* removes
+  them. A note says to set the sensor up in one place if the Hue app also controls it.
+
+**Verified** on the emulator: the editor opened for "Hallway sensor" with Hallway preselected; Save
+posted three rules. Unit tests: day/night/off rules, condition limits, round trip from bridge
+rules, "stay off" and "no night mode" variants, other sensors' rules ignored. 63 tests.
+
+---
+
 ## Iteration 8 · v0.11.0 · Natural light
 
 **Why:** you like warm light, but the right warmth changes through the day. A rhythm that runs

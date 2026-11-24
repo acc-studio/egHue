@@ -284,6 +284,7 @@ it up on their own.
 | Light effects (candle, fire, sparkle, …), blink to identify | ✅ Full view |
 | Renaming lights, rooms, zones; fixture type | ✅ Full view |
 | Sensors: motion, temperature, light level, contact, battery | ✅ Devices tab; motion on/off |
+| Motion sensor switches lights (night mode, only when dark, off after) | ✅ Bridge rules, set up in Devices |
 | Adding new lights to the bridge | ❌ Use the Hue app |
 
 ## 11. Platform

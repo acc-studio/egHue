@@ -151,11 +151,11 @@ def build_state():
                       {"rid": mo_id, "rtype": "motion"}, {"rid": te_id, "rtype": "temperature"}, {"rid": ll_id, "rtype": "light_level"}]})
     add({"id": zb_id, "type": "zigbee_connectivity", "owner": {"rid": dev_id, "rtype": "device"}, "status": "connected"})
     add({"id": pw_id, "type": "device_power", "owner": {"rid": dev_id, "rtype": "device"}, "power_state": {"battery_level": 64}})
-    add({"id": mo_id, "type": "motion", "owner": {"rid": dev_id, "rtype": "device"}, "enabled": True,
+    add({"id": mo_id, "type": "motion", "id_v1": "/sensors/5", "owner": {"rid": dev_id, "rtype": "device"}, "enabled": True,
          "motion": {"motion": False, "motion_valid": True, "motion_report": {"changed": "2026-11-24T20:01:00.000Z", "motion": False}}})
     add({"id": te_id, "type": "temperature", "owner": {"rid": dev_id, "rtype": "device"}, "enabled": True,
          "temperature": {"temperature": 21.37, "temperature_valid": True}})
-    add({"id": ll_id, "type": "light_level", "owner": {"rid": dev_id, "rtype": "device"}, "enabled": True,
+    add({"id": ll_id, "type": "light_level", "id_v1": "/sensors/6", "owner": {"rid": dev_id, "rtype": "device"}, "enabled": True,
          "light": {"light_level": 18000, "light_level_valid": True}})
     bridge_dev = rid()
     add({"id": bridge_dev, "type": "device", "metadata": {"name": "Fake Hue Bridge", "archetype": "bridge_v2"},

@@ -46,6 +46,11 @@ fun FullApp(c: AppContainer, onOpenSettings: () -> Unit, onOpenRemote: (String) 
     // "edit:<groupId>:<sceneId or 'new'>" (scene editor) or "auto:<id or 'new'>" (automation editor).
     var editor by rememberSaveable { mutableStateOf<String?>(null) }
 
+    editor?.takeIf { it.startsWith("motion:") }?.let { route ->
+        BackHandler { editor = null }
+        MotionEditorScreen(c, route.removePrefix("motion:"), onDone = { editor = null })
+        return
+    }
     editor?.takeIf { it.startsWith("zone:") }?.let { route ->
         BackHandler { editor = null }
         ZoneEditorScreen(c, route.removePrefix("zone:").takeIf { it != "new" }, onDone = { editor = null })
@@ -88,7 +93,7 @@ fun FullApp(c: AppContainer, onOpenSettings: () -> Unit, onOpenRemote: (String) 
             when (tab) {
                 FullTab.HOME -> HomeScreen(c, onOpenSettings = onOpenSettings, onEditScene = editScene)
                 FullTab.SCENES -> ScenesScreen(c, onOpenSettings = onOpenSettings, onEdit = editScene, onNew = { openEditor(it, null) })
-                FullTab.DEVICES -> DevicesScreen(c, onOpenSettings = onOpenSettings, onOpenRemote = onOpenRemote, onEditZone = { editor = "zone:${it ?: "new"}" })
+                FullTab.DEVICES -> DevicesScreen(c, onOpenSettings = onOpenSettings, onOpenRemote = onOpenRemote, onEditZone = { editor = "zone:${it ?: "new"}" }, onEditMotion = { editor = "motion:$it" })
                 FullTab.AUTOMATIONS -> AutomationsScreen(c, onOpenSettings = onOpenSettings, onEdit = { editor = "auto:${it ?: "new"}" })
             }
         }

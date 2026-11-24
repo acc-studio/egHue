@@ -61,7 +61,7 @@ import kotlin.math.roundToInt
 /** Every light, sensor, remote and the bridge itself. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevicesScreen(c: AppContainer, onOpenSettings: () -> Unit, onOpenRemote: (String) -> Unit, onEditZone: (String?) -> Unit) {
+fun DevicesScreen(c: AppContainer, onOpenSettings: () -> Unit, onOpenRemote: (String) -> Unit, onEditZone: (String?) -> Unit, onEditMotion: (String) -> Unit) {
     val repo = c.repository
     val home by repo.home.collectAsStateWithLifecycle()
     val bridge by c.settings.bridge.collectAsStateWithLifecycle()
@@ -98,7 +98,11 @@ fun DevicesScreen(c: AppContainer, onOpenSettings: () -> Unit, onOpenRemote: (St
 
             if (home.sensors.isNotEmpty()) item { Header("Sensors") }
             items(home.sensors, key = { "s" + it.id }) { s ->
-                SensorCard(s, onMotionEnabled = { on -> s.motionId?.let { scope.launch { repo.setMotionEnabled(it, on) } } })
+                SensorCard(
+                    s,
+                    onMotionEnabled = { on -> s.motionId?.let { scope.launch { repo.setMotionEnabled(it, on) } } },
+                    onSetUp = if (s.presenceV1 != null) ({ onEditMotion(s.id) }) else null,
+                )
             }
 
             if (home.remotes.isNotEmpty()) item { Header("Remotes") }
@@ -189,9 +193,9 @@ fun ago(iso: String?, now: Instant = Instant.now()): String? {
 }
 
 @Composable
-private fun SensorCard(s: SensorUi, onMotionEnabled: (Boolean) -> Unit) {
+private fun SensorCard(s: SensorUi, onMotionEnabled: (Boolean) -> Unit, onSetUp: (() -> Unit)?) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(Modifier.fillMaxWidth().then(if (onSetUp != null) Modifier.clickable(onClick = onSetUp) else Modifier).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Sensors, contentDescription = null)
                 Spacer(Modifier.size(14.dp))
@@ -215,6 +219,7 @@ private fun SensorCard(s: SensorUi, onMotionEnabled: (Boolean) -> Unit) {
                 s.contactClosed?.let { if (it) "Closed" else "Open" },
             )
             if (readings.isNotEmpty()) Text(readings.joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+            if (onSetUp != null) Text("Tap to choose what motion does", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

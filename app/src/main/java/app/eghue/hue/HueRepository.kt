@@ -573,6 +573,30 @@ class HueRepository(
     suspend fun setMotionEnabled(motionId: String, enabled: Boolean): Boolean =
         write("change the sensor", "motion", motionId, buildJsonObject { put("enabled", enabled) })
 
+    // ---- Motion sensors (bridge rules) ----------------------------------------------------------
+
+    /** What [sensor] does now, if egHue set it up. Throws if the bridge can't be read. */
+    suspend fun loadMotion(sensor: SensorUi): MotionSetup? {
+        val t = target() ?: throw IOException("Not connected to a bridge")
+        val presence = sensor.presenceV1 ?: return null
+        return MotionRules.parse(presence, sensor.lightLevelV1, client.v1Get(t, "rules"))
+    }
+
+    /** Replaces egHue's rules for [sensor] with [setup] (null removes them). New rules go in first. */
+    suspend fun saveMotion(sensor: SensorUi, setup: MotionSetup?): Boolean = sceneOp("save the sensor") { t ->
+        val presence = sensor.presenceV1 ?: return@sceneOp false
+        val old = MotionRules.ownRules(presence, client.v1Get(t, "rules")).keys
+        val created = mutableListOf<String>()
+        try {
+            if (setup != null) for (spec in MotionRules.build(setup)) created += client.v1Post(t, "rules", spec.toJson())
+        } catch (e: Exception) {
+            created.forEach { runCatching { client.v1Delete(t, "rules/$it") } }
+            throw e
+        }
+        old.forEach { runCatching { client.v1Delete(t, "rules/$it") } }
+        true
+    } ?: false
+
     // ---- Automations (bridge schedules) ---------------------------------------------------------
 
     private val _automations = MutableStateFlow<List<Automation>>(emptyList())

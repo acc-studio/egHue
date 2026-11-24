@@ -54,6 +54,9 @@ data class SensorUi(
     val lux: Double? = null,
     /** True when closed, for door/window contacts. */
     val contactClosed: Boolean? = null,
+    /** Legacy presence and light-level sensors (for motion rules), e.g. "/sensors/5". */
+    val presenceV1: String? = null,
+    val lightLevelV1: String? = null,
 )
 
 /** Hue "power-on behaviour" (`powerup`). Custom values are only meaningful for [PowerOn.CUSTOM]. */
@@ -280,6 +283,8 @@ fun deriveHome(resources: Collection<JsonObject>): HomeUi {
             lux = level?.obj("light")?.let { l -> l.obj("light_level_report")?.int("light_level") ?: l.int("light_level") }
                 ?.let { Math.pow(10.0, (it - 1) / 10_000.0) },
             contactClosed = contact?.obj("contact_report")?.str("state")?.let { it == "contact" },
+            presenceV1 = motion?.str("id_v1"),
+            lightLevelV1 = level?.str("id_v1"),
         )
     }.sortedWith(compareBy(nameOrder) { it.name })
 

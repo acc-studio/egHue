@@ -90,6 +90,12 @@ data class SceneUi(
     val colors: List<Int>,
     val active: Boolean,
     val idV1: String? = null,
+    /** Which of egHue's presets this scene is, if any (tagged in its metadata.appdata). */
+    val preset: Preset? = null,
+    /** The scene's raw metadata.appdata (for telling preset versions apart). */
+    val appdata: String? = null,
+    /** Lights the scene sets. */
+    val targets: Set<String> = emptySet(),
 )
 
 data class HomeUi(
@@ -289,6 +295,9 @@ private fun deriveScene(s: JsonObject): SceneUi? {
         colors = colors.take(4),
         active = status != "inactive",
         idV1 = s.str("id_v1"),
+        preset = Preset.fromAppdata(s.obj("metadata")?.str("appdata")),
+        appdata = s.obj("metadata")?.str("appdata"),
+        targets = s.arr("actions")?.objects().orEmpty().mapNotNull { it.ref("target")?.rid }.toSet(),
     )
 }
 

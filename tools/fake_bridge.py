@@ -9,7 +9,8 @@ self-signed certificate whose CN is the bridge id (like a real bridge):
   POST /api                           pairing; "press the link button" by typing
                                       `press` in this console, or start with --auto-press
   GET  /clip/v2/resource[/type[/id]]  state
-  PUT  /clip/v2/resource/type/id      commands (light, grouped_light, scene recall)
+  POST /clip/v2/resource/scene        create a scene
+  PUT  /clip/v2/resource/type/id      commands (light, grouped_light, scene recall/update)
   GET  /eventstream/clip/v2           Server-Sent Events with live updates
 
 Usage:  python tools/fake_bridge.py [--port 8443] [--auto-press]
@@ -335,11 +336,11 @@ def press(sensor_id, event_code):
     return [r["name"] for r in fired]
 
 
-def event(updates):
+def event(updates, kind="update"):
     if not updates:
         return
     payload = [{"creationtime": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "id": rid(),
-                "type": "update", "data": updates}]
+                "type": kind, "data": updates}]
     for q in list(subscribers):
         q.put(payload)
 
@@ -362,6 +363,13 @@ def handle_put(rtype, rid_, body):
         affected_groups = {g["id"] for g in state.values() if g["type"] == "grouped_light"}
     elif rtype == "scene":
         s = state[rid_]
+        changed = {}
+        if "actions" in body:
+            s["actions"] = body["actions"]; changed["actions"] = body["actions"]
+        if "metadata" in body:
+            merge(s["metadata"], body["metadata"]); changed["metadata"] = s["metadata"]
+        if changed:
+            updates.append({"id": rid_, "type": "scene", **changed})
         if body.get("recall"):
             for a in s["actions"]:
                 l = state[a["target"]["rid"]]
@@ -454,6 +462,25 @@ class Handler(BaseHTTPRequestHandler):
                 fired = press(str(b["sensor"]), int(b["event"]))
             print("press", b, "->", fired, flush=True)
             return self.send_json({"fired": fired})
+        if p == "/clip/v2/resource/scene":
+            if not self.authed():
+                return
+            b = self.body()
+            with lock:
+                name = (b.get("metadata") or {}).get("name", "")
+                group = b.get("group") or {}
+                clash = any(o["type"] == "scene" and o["group"]["rid"] == group.get("rid") and o["metadata"]["name"] == name
+                            for o in state.values())
+                if not name or len(name) > 32 or group.get("rid") not in state or not b.get("actions") or clash:
+                    return self.send_json({"errors": [{"description": "invalid scene"}], "data": []}, 400)
+                sid = rid()
+                scene = {"id": sid, "type": "scene", "id_v1": "/scenes/" + uuid.uuid4().hex[:16],
+                         "metadata": b["metadata"], "group": group, "actions": b["actions"],
+                         "status": {"active": "inactive"}}
+                state[sid] = scene
+                event([copy.deepcopy(scene)], kind="add")
+            print("created scene", name, flush=True)
+            return self.send_json({"errors": [], "data": [{"rid": sid, "rtype": "scene"}]})
         if p.startswith("/api/" + APP_KEY + "/"):
             what = p[len("/api/" + APP_KEY + "/"):]
             b = self.body()

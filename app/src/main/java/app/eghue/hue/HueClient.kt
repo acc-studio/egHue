@@ -113,6 +113,25 @@ class HueClient(
         }
     }
 
+    /** POST /clip/v2/resource/<type>; returns the new resource's id. */
+    suspend fun create(t: Target, type: String, body: JsonObject): String = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url("https://${t.host}/clip/v2/resource/$type")
+            .header(KEY_HEADER, t.key)
+            .post(body.toString().toRequestBody(jsonType))
+            .build()
+        http.newCall(req).await().use { resp ->
+            checkAuth(resp)
+            val text = resp.body?.string().orEmpty()
+            val o = runCatching { HueJson.parseToJsonElement(text).jsonObject }.getOrNull()
+            val id = o?.arr("data")?.objects()?.firstNotNullOfOrNull { it.str("rid") }
+            if (!resp.isSuccessful || id == null) {
+                throw HueApiException(o?.arr("errors")?.objects()?.firstOrNull()?.str("description") ?: "HTTP ${resp.code}")
+            }
+            id
+        }
+    }
+
     // ---- Legacy (v1) API: switch rules and memory sensors ---------------------------------------
 
     /** GET /api/<key>/<path>; returns the JSON object (e.g. all rules keyed by id). */

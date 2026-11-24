@@ -383,6 +383,82 @@ class HueRepository(
         queue.submit("scene", sceneId, RECALL_BODY)
     }
 
+    /**
+     * Switches [groupId] to [preset]. The first use in a room saves the preset as a bridge scene
+     * (so it also works on remotes and in other Hue apps); later uses recall that scene, rewriting it
+     * first if the room's lights or the preset's design have changed since it was saved.
+     */
+    fun applyPreset(groupId: String, preset: Preset) {
+        scope.launch {
+            try {
+                val sceneId = ensurePresetScene(groupId, preset) ?: return@launch
+                recallScene(sceneId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: UnauthorizedException) {
+                _connection.value = ConnState.Unauthorized
+            } catch (e: Exception) {
+                android.util.Log.w("egHue", "Couldn't save preset ${preset.title}", e)
+                _messages.tryEmit(if (e is HueApiException) "Bridge said: ${e.message}" else "Couldn't reach your Hue Bridge")
+            }
+        }
+    }
+
+    private suspend fun ensurePresetScene(groupId: String, preset: Preset): String? {
+        val t = target() ?: return null
+        val home = _home.value
+        val g = home.group(groupId) ?: return null
+        val lights = g.lightIds.mapNotNull(home::light)
+        if (lights.isEmpty()) return null
+        val actions = preset.actions(lights)
+        val actionsJson = JsonArray(actions.map { (id, action) ->
+            buildJsonObject {
+                putJsonObject("target") { put("rid", id); put("rtype", "light") }
+                put("action", action)
+            }
+        })
+        val saved = home.scenesFor(groupId).firstOrNull { it.preset == preset }
+        if (saved != null) {
+            if (saved.appdata == preset.appdata && saved.targets == actions.keys) return saved.id
+            val body = buildJsonObject {
+                put("actions", actionsJson)
+                putJsonObject("metadata") { put("name", saved.name); put("appdata", preset.appdata) }
+            }
+            client.put(t, "scene", saved.id, body)
+            storeScene(saved.id, saved.name, g, preset, actionsJson)
+            return saved.id
+        }
+        // A scene of the same name in this room (e.g. the user's own "Evening") would clash.
+        val taken = home.scenesFor(groupId).map { it.name.lowercase() }.toSet()
+        val name = if (preset.title.lowercase() in taken) "${preset.title} · egHue" else preset.title
+        val body = buildJsonObject {
+            putJsonObject("metadata") { put("name", name); put("appdata", preset.appdata) }
+            putJsonObject("group") { put("rid", g.id); put("rtype", if (g.kind == GroupKind.ZONE) "zone" else "room") }
+            put("actions", actionsJson)
+        }
+        val id = client.create(t, "scene", body)
+        storeScene(id, name, g, preset, actionsJson)
+        return id
+    }
+
+    /** Puts a scene we just wrote into local state, so it can be recalled before the bridge's event arrives. */
+    private fun storeScene(id: String, name: String, g: GroupUi, preset: Preset, actions: JsonArray) {
+        val scene = buildJsonObject {
+            put("id", id)
+            put("type", "scene")
+            putJsonObject("metadata") { put("name", name); put("appdata", preset.appdata) }
+            putJsonObject("group") { put("rid", g.id); put("rtype", if (g.kind == GroupKind.ZONE) "zone" else "room") }
+            put("actions", actions)
+            putJsonObject("status") { put("active", "inactive") }
+        }
+        synchronized(lock) {
+            val existing = server[id]
+            server = server + (id to (existing?.let { deepMerge(it, scene) } ?: scene))
+        }
+        publish()
+        persistRequests.tryEmit(Unit)
+    }
+
     private fun groupPatches(groupedLightId: String, members: List<String>, body: JsonObject, local: JsonObject?): Map<String, JsonObject> {
         val full = local?.let { deepMerge(body, it) } ?: body
         val member = memberPatch(full)

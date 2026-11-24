@@ -58,6 +58,7 @@ import app.eghue.hue.GroupUi
 import app.eghue.hue.HomeUi
 import app.eghue.hue.HueRepository
 import app.eghue.hue.LightUi
+import app.eghue.hue.Preset
 import app.eghue.hue.SceneUi
 import app.eghue.hue.Xy
 import app.eghue.ui.components.BrightnessBar
@@ -149,7 +150,22 @@ private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, onOpenLig
             repo.setPowerOn(g.lightIds, it); editPowerOn = false
         })
     }
-    val scenes = home.scenesFor(g.id)
+    val allScenes = home.scenesFor(g.id)
+    if (lights.isNotEmpty()) {
+        SectionTitle("Presets")
+        val presets = Preset.entries.map { p ->
+            SceneUi(
+                id = p.name,
+                name = p.title,
+                groupId = g.id,
+                colors = p.previewColors(lights),
+                active = allScenes.any { it.preset == p && it.active },
+            )
+        }
+        SceneGrid(presets, onRecall = { key -> repo.applyPreset(g.id, Preset.valueOf(key)) })
+    }
+    // egHue's saved presets already show above.
+    val scenes = allScenes.filter { it.preset == null }
     if (scenes.isNotEmpty()) {
         SectionTitle("Scenes")
         SceneGrid(scenes, onRecall = repo::recallScene)

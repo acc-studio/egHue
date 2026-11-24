@@ -83,6 +83,11 @@ Opens as a bottom sheet over the home screen:
 - **White | Colour:** shown according to what the lights support.
   - *White:* a warm-to-cool temperature bar plus presets (*Warm*, *Soft*, *Bright*, *Daylight*).
   - *Colour:* a hue/saturation wheel; drag to change colour live.
+- **Presets:** four warm, designed looks in every room and zone: *Evening*, *Unwind*, *Dinner*
+  and *Late*. Each fixture gets its own light by type (ceiling, pendant, lamp, strip/accent):
+  lamps carry the room, overhead lights sit lower, strips glow amber or ember. No cool white.
+  The first tap saves the preset to the bridge as a real scene, so it then also works on remotes
+  and in other Hue apps; it is rewritten automatically if the room's lights change.
 - **Scenes:** **every scene saved on the bridge, including those created in the Hue app**, shown
   as tiles in the scene's own colours. Tap to activate; the active scene is outlined and ticked.
 - **Lights** (rooms and zones): every light in the group, with the same tap, drag and open gestures.
@@ -252,13 +257,15 @@ it up on their own.
 | On/off, brightness | ✅ One tap / one drag |
 | Colour and white ambience | ✅ Colour wheel, temperature bar, presets |
 | Scenes (incl. Hue-app scenes) | ✅ View and activate, with the active scene shown |
+| Warm presets | ✅ Evening, Unwind, Dinner, Late; designed per fixture, saved as bridge scenes on first use |
 | All off | ✅ |
 | Power-on behaviour per light | ✅ All four presets incl. custom; also per room |
 | Remote / switch button setup | ✅ Press & hold per button: toggle, scenes, scene cycle, dimming, all off |
 | Live sync with other apps and switches | ✅ Event stream |
 | Widget | ✅ Configurable, one-tap |
 | Light/dark/system theme | ✅ Plus Material You |
-| Creating or editing scenes, rooms, zones | ❌ Out of scope (do it in the Hue app; egHue picks it up live) |
+| Creating or editing your own scenes | ⏳ Planned |
+| Creating or editing rooms, zones | ❌ Out of scope (do it in the Hue app; egHue picks it up live) |
 | Automations, routines, Hue Sync, entertainment areas | ❌ Out of scope |
 | Control away from home | ❌ Local only for now (needs Hue Remote API credentials; possible later) |
 | Adding new lights to the bridge | ❌ Use the Hue app |

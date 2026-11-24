@@ -115,16 +115,81 @@ Opens as a bottom sheet over the home screen:
 
 ---
 
-## 5. Settings
+## 5. Power-on behaviour ("default on")
+
+<img src="screenshots/09-power-on.png" width="300" align="right" alt="Power-on behaviour editor">
+
+Each Hue light has a **power-on behaviour**: what it does when it gets power, for example from a
+wall switch or after a power cut. It's the same setting the Hue app edits under *Power-on behaviour*,
+and it's stored in the light, so it works with any app or none.
+
+- Open any light's (or room's) controls › **Power-on behaviour**:
+  - **Hue default:** warm white, full brightness.
+  - **Power loss recovery:** back to how it was, on or off, before the power went.
+  - **Last colour:** on, in the colour and brightness it last had.
+  - **Custom:** on, at a brightness and colour/white you choose (with *Use the light's current look*).
+- From a room or zone, the setting applies to **all its lights** at once ("Different per light"
+  is shown when they differ).
+
+**Switch on to power-on settings** (Settings › Lights, on by default) makes egHue use the same
+defaults whenever *it* switches lights on, from the app, the widget or a remote set up in egHue.
+Lights with a custom or Hue-default power-on behaviour come on in that state. Lights on *last
+colour* / *power loss recovery* come back as they were. Turned off, egHue behaves like the Hue
+app (always the last state).
+
+<br clear="right">
+
+---
+
+## 6. Remotes
+
+<p>
+<img src="screenshots/10-remote.png" width="300" alt="Remote button setup">
+&nbsp;
+<img src="screenshots/11-remote-edit.png" width="300" alt="Remote with a scene cycle">
+</p>
+
+Settings › **Remotes** lists every Hue switch on the bridge (dimmer switches, smart buttons, tap
+dials, and so on) with its battery level. Opening one shows:
+
+- **Controls:** the room or zone the buttons act on.
+- For **each button**, a **Press** and a **Hold** action:
+
+| Press | Hold |
+|---|---|
+| Toggle on / off · Turn on · Turn off · Scene… · Cycle through scenes… · Brighter · Dimmer · All lights off · Does nothing | Brighten while held · Dim while held · Turn off · Turn on · Scene… · All lights off · Does nothing |
+
+How it works:
+- **Runs on the bridge.** Button actions are stored as bridge rules, the same mechanism as the
+  dimmer's factory setup, so remotes work with every phone off.
+- **Reads what's there.** The current setup (e.g. the factory configuration) is shown in plain
+  words. Anything egHue doesn't model is shown as **Keep current: …** and left exactly as it is.
+- **Changes only what you change.** On *Save to bridge*, new rules are written first. The old rules
+  for the changed buttons are removed only after that succeeds, so a failure leaves the remote
+  working as before.
+- **Scene cycling** steps through the scenes in the order you tick them, and starts again from the
+  first scene 10 s after the last press (like the Hue app).
+- **Fast presses:** a press with no hold action fires the moment the button goes down. When the
+  button also has a hold action, the press fires on release so the two don't clash.
+- *Turn on* and *Toggle* follow **Switch on to power-on settings**, using the values at the time you save.
+
+Verified against the dimmer switch's real factory rules (read from a real bridge) and end-to-end
+with simulated button presses.
+
+---
+
+## 7. Settings
 
 <img src="screenshots/08-settings.png" width="300" align="right" alt="Settings">
 
+- **Lights:** *Switch on to power-on settings* (see §5).
+- **Remotes:** your Hue switches (see §6).
 - **Bridge:** name, address and live connection status. **Reconnect** forces a resync and
   re-runs discovery if the IP changed. **Disconnect** forgets the bridge (or **Pair again** if the
   bridge revoked access).
 - **Appearance:** Theme **System** (default; follows the device), **Light** or **Dark**.
   **Colours from wallpaper** (Material You, Android 12+); otherwise a warm amber theme.
-- **Updates** (see §6): source, the *Automatic updates* switch, the one-time permission to
+- **Updates** (see §8): source, the *Automatic updates* switch, the one-time permission to
   install updates, and **Check for updates**.
 - **About:** version.
 
@@ -132,7 +197,7 @@ Opens as a bottom sheet over the home screen:
 
 ---
 
-## 6. Automatic updates
+## 8. Automatic updates
 
 Two builds ("flavors") from one codebase:
 
@@ -154,7 +219,7 @@ it up on their own.
 
 ---
 
-## 7. How it stays fast and connected (technical)
+## 9. How it stays fast and connected (technical)
 
 - **API:** Hue CLIP v2 over HTTPS (`/clip/v2/resource`), plus the bridge's **event stream** (SSE,
   `/eventstream/clip/v2`). Changes from the Hue app, wall switches, automations or other phones show up
@@ -178,7 +243,7 @@ it up on their own.
 - **Reachability:** lights reported unreachable by the bridge (e.g. switched off at the wall) are
   labelled *Unreachable*.
 
-## 8. Feature parity with the Hue app
+## 10. Feature parity with the Hue app
 
 | Hue app feature | egHue |
 |---|---|
@@ -188,6 +253,8 @@ it up on their own.
 | Colour and white ambience | ✅ Colour wheel, temperature bar, presets |
 | Scenes (incl. Hue-app scenes) | ✅ View and activate, with the active scene shown |
 | All off | ✅ |
+| Power-on behaviour per light | ✅ All four presets incl. custom; also per room |
+| Remote / switch button setup | ✅ Press & hold per button: toggle, scenes, scene cycle, dimming, all off |
 | Live sync with other apps and switches | ✅ Event stream |
 | Widget | ✅ Configurable, one-tap |
 | Light/dark/system theme | ✅ Plus Material You |
@@ -196,11 +263,11 @@ it up on their own.
 | Control away from home | ❌ Local only for now (needs Hue Remote API credentials; possible later) |
 | Adding new lights to the bridge | ❌ Use the Hue app |
 
-## 9. Platform
+## 11. Platform
 
 - Android 8.0+ (minSdk 26), targets Android 15 (API 35). Kotlin, Jetpack Compose, Material 3,
   Jetpack Glance (widget), OkHttp, WorkManager.
 - Release APK size: about 2.4 MB.
 - Permissions: Internet and network state. The `github` build also requests *Install packages* (self-update) and *Notifications* (update notices).
-- Verified by 13 unit tests (state derivation, merging, colour maths, SSE parsing, command
-  coalescing, version comparison) and end-to-end on an emulator against `tools/fake_bridge.py`.
+- Verified by 22 unit tests (state derivation, merging, colour maths, SSE parsing, command
+  coalescing, version comparison, power-on behaviour, remote rule parsing and generation) and end-to-end on an emulator against `tools/fake_bridge.py`.

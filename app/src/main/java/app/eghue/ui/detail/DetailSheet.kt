@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -140,12 +141,19 @@ private fun GroupDetail(g: GroupUi, home: HomeUi, repo: HueRepository, onOpenLig
         onXy = { repo.setGroupXy(g.id, it) },
         onMirek = { repo.setGroupMirek(g.id, it) },
     )
+    val lights = g.lightIds.mapNotNull { home.light(it) }
+    var editPowerOn by remember { mutableStateOf(false) }
+    PowerOnRow(lights, onClick = { editPowerOn = true })
+    if (editPowerOn) {
+        PowerOnDialog(g.name, lights, onDismiss = { editPowerOn = false }, onSave = {
+            repo.setPowerOn(g.lightIds, it); editPowerOn = false
+        })
+    }
     val scenes = home.scenesFor(g.id)
     if (scenes.isNotEmpty()) {
         SectionTitle("Scenes")
         SceneGrid(scenes, onRecall = repo::recallScene)
     }
-    val lights = g.lightIds.mapNotNull { home.light(it) }
     if (lights.isNotEmpty()) {
         SectionTitle("Lights")
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -197,6 +205,13 @@ private fun LightDetail(l: LightUi, repo: HueRepository, backLabel: String?, onB
         onXy = { repo.setLightXy(l.id, it) },
         onMirek = { repo.setLightMirek(l.id, it) },
     )
+    var editPowerOn by remember { mutableStateOf(false) }
+    PowerOnRow(listOf(l), onClick = { editPowerOn = true })
+    if (editPowerOn) {
+        PowerOnDialog(l.name, listOf(l), onDismiss = { editPowerOn = false }, onSave = {
+            repo.setPowerOn(listOf(l.id), it); editPowerOn = false
+        })
+    }
     if (!l.reachable) {
         Text(
             "This light isn't responding. Check that it's powered at the wall switch.",

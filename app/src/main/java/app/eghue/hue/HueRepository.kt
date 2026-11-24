@@ -8,6 +8,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -282,7 +285,12 @@ class HueRepository(
         setLightOn(id, !l.on)
     }
 
-    fun setLightOn(id: String, on: Boolean) = lightCommand(id, onBody(on))
+    fun setLightOn(id: String, on: Boolean) {
+        val l = _home.value.light(id)
+        if (!on || l == null) return lightCommand(id, onBody(on))
+        val body = switchOnBody(l, settings.followPowerOn.value)
+        lightCommand(id, body, body.colorModeHint())
+    }
     fun setLightBrightness(id: String, brightness: Float) = lightCommand(id, brightnessBody(brightness))
     fun setLightXy(id: String, xy: Xy) = lightCommand(id, xyBody(xy), CT_INACTIVE)
     fun setLightMirek(id: String, mirek: Int) = lightCommand(id, mirekBody(mirek), CT_ACTIVE)
@@ -297,7 +305,32 @@ class HueRepository(
         setGroupOn(groupId, !g.on)
     }
 
-    fun setGroupOn(groupId: String, on: Boolean) = groupCommand(groupId, onBody(on))
+    fun setGroupOn(groupId: String, on: Boolean) {
+        val g = _home.value.group(groupId) ?: return
+        val perLight = if (on) switchOnBodies(g) else null
+        if (perLight == null) return groupCommand(groupId, onBody(on))
+        // Some lights have a power-on state to restore: switch each one on in that state.
+        g.groupedLightId?.let { addOverlays(mapOf(it to onBody(true))) }
+        perLight.forEach { (id, body) -> lightCommand(id, body, body.colorModeHint()) }
+    }
+
+    /** Per-light "on" commands for [g] when any of them needs more than a plain on, else null. */
+    private fun switchOnBodies(g: GroupUi): Map<String, JsonObject>? {
+        if (!settings.followPowerOn.value) return null
+        val home = _home.value
+        val bodies = g.lightIds.mapNotNull { id -> home.light(id)?.let { id to switchOnBody(it, true) } }.toMap()
+        return bodies.takeIf { b -> b.values.any { it.setsState() } }
+    }
+
+    /** Sets the power-on behaviour of [lightIds] (only what each light supports is stored). */
+    fun setPowerOn(lightIds: Collection<String>, powerOn: PowerOn) {
+        val home = _home.value
+        for (id in lightIds) {
+            val l = home.light(id) ?: continue
+            if (l.powerOn == null) continue
+            lightCommand(id, powerUpBody(powerOn, l))
+        }
+    }
     fun setGroupBrightness(groupId: String, brightness: Float) = groupCommand(groupId, brightnessBody(brightness))
     fun setGroupXy(groupId: String, xy: Xy) = groupCommand(groupId, xyBody(xy), CT_INACTIVE)
     fun setGroupMirek(groupId: String, mirek: Int) = groupCommand(groupId, mirekBody(mirek), CT_ACTIVE)
@@ -383,6 +416,88 @@ class HueRepository(
         if (foreground) wake.trySend(Unit) else scope.launch { runCatching { refresh() } }
     }
 
+    // ---- Remotes --------------------------------------------------------------------------------
+
+    /** Reads how [remote]'s buttons are set up on the bridge. */
+    suspend fun loadRemote(remote: RemoteUi): RemoteSetup {
+        val t = target() ?: throw IOException("Not connected to a bridge")
+        val sensor = remote.sensorV1 ?: throw IOException("This remote can't be set up here")
+        val rules = client.v1Get(t, "rules")
+        return RemoteRules.parse(sensor, rules, V1Index(_home.value))
+    }
+
+    /**
+     * Writes [updated] for [remote]. New rules are created first; old rules for the changed
+     * buttons are removed only once everything new is in place, so a failure leaves the remote
+     * working as before.
+     */
+    suspend fun saveRemote(remote: RemoteUi, original: RemoteSetup, updated: RemoteSetup) {
+        val t = target() ?: throw IOException("Not connected to a bridge")
+        val sensor = remote.sensorV1 ?: throw IOException("This remote can't be set up here")
+        val home = _home.value
+        val index = V1Index(home)
+        val group = updated.targetGroupId?.let(index::groupV1)
+        val targetChanged = updated.targetGroupId != original.targetGroupId
+        val turnOn = group?.let { g ->
+            val lights = home.group(updated.targetGroupId!!)?.lightIds?.mapNotNull(home::light).orEmpty()
+            RemoteRules.turnOnActions(g, lights, settings.followPowerOn.value, index)
+        }
+
+        // Which button gestures need rewriting.
+        val changed = mutableSetOf<ButtonKey>()
+        for (b in remote.buttons) {
+            val newPress = updated.action(b, Gesture.PRESS)
+            val newHold = updated.action(b, Gesture.HOLD)
+            val oldHold = original.action(b, Gesture.HOLD)
+            if (newHold != oldHold || (targetChanged && newHold.usesTarget)) changed += ButtonKey(b, Gesture.HOLD)
+            // The press event depends on whether a hold action exists, so rewrite it when that flips.
+            val holdPresenceFlipped = (newHold == ButtonAction.Nothing) != (oldHold == ButtonAction.Nothing)
+            if (newPress != original.action(b, Gesture.PRESS) || (targetChanged && newPress.usesTarget) ||
+                (holdPresenceFlipped && newPress !is ButtonAction.Keep)
+            ) changed += ButtonKey(b, Gesture.PRESS)
+        }
+        changed.removeAll { updated.actions[it] is ButtonAction.Keep }
+        if (changed.isEmpty()) return
+
+        val created = mutableListOf<String>()
+        try {
+            val specs = mutableListOf<RemoteRules.Spec>()
+            for (key in changed) {
+                val action = updated.action(key.button, key.gesture)
+                var memory: String? = null
+                if (action is ButtonAction.Cycle) {
+                    memory = original.cycleSensors[key.button]
+                        ?: ("/sensors/" + client.v1Post(t, "sensors", cycleSensorJson(sensor, key.button)))
+                    specs += RemoteRules.cycleReset(sensor, key.button, memory)
+                }
+                specs += RemoteRules.build(
+                    sensor, key.button, key.gesture, action, updated.action(key.button, Gesture.HOLD),
+                    group, turnOn, index, memory,
+                )
+            }
+            for (spec in specs) created += client.v1Post(t, "rules", spec.toJson())
+        } catch (e: Exception) {
+            created.forEach { runCatching { client.v1Delete(t, "rules/$it") } }
+            throw e
+        }
+        // Now retire the old rules for the changed gestures (and their scene-cycle timers).
+        val old = changed.flatMap { original.ruleIds[it].orEmpty() }.toMutableSet()
+        changed.filter { it.gesture == Gesture.PRESS }.forEach { k ->
+            original.cycleSensors[k.button]?.let { m -> old += original.resetRules[m].orEmpty() }
+        }
+        old.forEach { runCatching { client.v1Delete(t, "rules/$it") } }
+    }
+
+    private fun cycleSensorJson(sensor: String, button: Int) = buildJsonObject {
+        put("name", "egHue cycle ${sensor.substringAfterLast('/')} b$button")
+        put("type", "CLIPGenericStatus")
+        put("modelid", "egHueCycle")
+        put("manufacturername", "egHue")
+        put("swversion", "1.0")
+        put("uniqueid", "eghue-cycle-${sensor.substringAfterLast('/')}-$button-${System.currentTimeMillis() % 100000}")
+        put("recycle", true)
+    }
+
     // ---- Widget path ----------------------------------------------------------------------------
 
     /**
@@ -397,7 +512,7 @@ class HueRepository(
             if (kind == KIND_LIGHT) {
                 if (stale) withTimeoutOrNull(2_500) { runCatching { client.get(t, "light", id)?.let { commitServer(it) } } }
                 val l = _home.value.light(id) ?: return false
-                val body = onBody(!l.on)
+                val body = if (l.on) onBody(false) else switchOnBody(l, settings.followPowerOn.value)
                 addOverlays(mapOf(id to body))
                 onOptimistic()
                 client.put(t, "light", id, body)
@@ -407,11 +522,19 @@ class HueRepository(
                 if (stale) withTimeoutOrNull(2_500) { runCatching { client.get(t, "grouped_light", gl0)?.let { commitServer(it) } } }
                 val g = _home.value.group(id) ?: return false
                 val gl = g.groupedLightId ?: return false
-                val body = onBody(!g.on)
-                addOverlays(groupPatches(gl, g.lightIds, body, null))
-                onOptimistic()
-                client.put(t, "grouped_light", gl, body)
-                commitToServer(groupPatches(gl, g.lightIds, body, null))
+                val perLight = if (!g.on) switchOnBodies(g) else null
+                if (perLight != null) {
+                    addOverlays(perLight + (gl to onBody(true)))
+                    onOptimistic()
+                    coroutineScope { perLight.map { (lid, b) -> async { client.put(t, "light", lid, b) } }.awaitAll() }
+                    commitToServer(perLight)
+                } else {
+                    val body = onBody(!g.on)
+                    addOverlays(groupPatches(gl, g.lightIds, body, null))
+                    onOptimistic()
+                    client.put(t, "grouped_light", gl, body)
+                    commitToServer(groupPatches(gl, g.lightIds, body, null))
+                }
             }
             _widgetError.value = false
             true

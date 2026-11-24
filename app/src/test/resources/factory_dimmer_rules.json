@@ -1,0 +1,420 @@
+{
+ "1": {
+  "name": "Dimmer switch tgl-press",
+  "owner": "0000",
+  "timestriggered": 1,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "1000"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true
+    }
+   }
+  ]
+ },
+ "2": {
+  "name": "Dimmer switch tgl-long",
+  "owner": "0000",
+  "timestriggered": 2,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "1001"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": false
+    }
+   }
+  ]
+ },
+ "4": {
+  "name": "Dimmer switch up-press",
+  "owner": "0000",
+  "timestriggered": 0,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "2000"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true,
+     "transitiontime": 9,
+     "bri_inc": 30
+    }
+   }
+  ]
+ },
+ "5": {
+  "name": "Dimmer switch up-long",
+  "owner": "0000",
+  "timestriggered": 0,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "2001"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true,
+     "transitiontime": 9,
+     "bri_inc": 56
+    }
+   }
+  ]
+ },
+ "6": {
+  "name": "Dimmer switch dn-press",
+  "owner": "0000",
+  "timestriggered": 1,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "3000"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true,
+     "transitiontime": 9,
+     "bri_inc": -30
+    }
+   }
+  ]
+ },
+ "7": {
+  "name": "Dimmer switch dn-long",
+  "owner": "0000",
+  "timestriggered": 0,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "3001"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true,
+     "transitiontime": 9,
+     "bri_inc": -56
+    }
+   }
+  ]
+ },
+ "8": {
+  "name": "Dimmer switch hue-press",
+  "owner": "0000",
+  "timestriggered": 2,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "ddx",
+    "value": "PT00:00:10"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/sensors/4/state",
+    "method": "PUT",
+    "body": {
+     "status": 0
+    }
+   }
+  ]
+ },
+ "9": {
+  "name": "Dimmer switch hue-press",
+  "owner": "0000",
+  "timestriggered": 0,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "4000"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   },
+   {
+    "address": "/sensors/4/state/status",
+    "operator": "eq",
+    "value": "0"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/sensors/4/state",
+    "method": "PUT",
+    "body": {
+     "status": 1
+    }
+   },
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true,
+     "bri": 144,
+     "xy": [
+      0.5018,
+      0.4152
+     ],
+     "ct": 447
+    }
+   }
+  ]
+ },
+ "10": {
+  "name": "Dimmer switch hue-press",
+  "owner": "0000",
+  "timestriggered": 0,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "4000"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   },
+   {
+    "address": "/sensors/4/state/status",
+    "operator": "eq",
+    "value": "1"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/sensors/4/state",
+    "method": "PUT",
+    "body": {
+     "status": 2
+    }
+   },
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true,
+     "bri": 254,
+     "xy": [
+      0.445,
+      0.4067
+     ],
+     "ct": 346
+    }
+   }
+  ]
+ },
+ "11": {
+  "name": "Dimmer switch hue-press",
+  "owner": "0000",
+  "timestriggered": 0,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "4000"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   },
+   {
+    "address": "/sensors/4/state/status",
+    "operator": "eq",
+    "value": "2"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/sensors/4/state",
+    "method": "PUT",
+    "body": {
+     "status": 3
+    }
+   },
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true,
+     "bri": 254,
+     "xy": [
+      0.369,
+      0.3719
+     ],
+     "ct": 233
+    }
+   }
+  ]
+ },
+ "12": {
+  "name": "Dimmer switch hue-press",
+  "owner": "0000",
+  "timestriggered": 0,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "4000"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   },
+   {
+    "address": "/sensors/4/state/status",
+    "operator": "eq",
+    "value": "3"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/sensors/4/state",
+    "method": "PUT",
+    "body": {
+     "status": 4
+    }
+   },
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true,
+     "bri": 254,
+     "xy": [
+      0.3143,
+      0.3301
+     ],
+     "ct": 156
+    }
+   }
+  ]
+ },
+ "13": {
+  "name": "Dimmer switch hue-press",
+  "owner": "0000",
+  "timestriggered": 0,
+  "status": "enabled",
+  "recycle": false,
+  "conditions": [
+   {
+    "address": "/sensors/2/state/buttonevent",
+    "operator": "eq",
+    "value": "4000"
+   },
+   {
+    "address": "/sensors/2/state/lastupdated",
+    "operator": "dx"
+   },
+   {
+    "address": "/sensors/4/state/status",
+    "operator": "eq",
+    "value": "4"
+   }
+  ],
+  "actions": [
+   {
+    "address": "/sensors/4/state",
+    "method": "PUT",
+    "body": {
+     "status": 0
+    }
+   },
+   {
+    "address": "/groups/81/action",
+    "method": "PUT",
+    "body": {
+     "on": true,
+     "bri": 1,
+     "xy": [
+      0.561,
+      0.4042
+     ],
+     "ct": 447
+    }
+   }
+  ]
+ }
+}

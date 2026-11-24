@@ -113,6 +113,50 @@ class HueClient(
         }
     }
 
+    // ---- Legacy (v1) API: switch rules and memory sensors ---------------------------------------
+
+    /** GET /api/<key>/<path>; returns the JSON object (e.g. all rules keyed by id). */
+    suspend fun v1Get(t: Target, path: String): JsonObject = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url("https://${t.host}/api/${t.key}/$path").build()
+        http.newCall(req).await().use { resp ->
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            when (val e = HueJson.parseToJsonElement(resp.body!!.string())) {
+                is JsonObject -> e
+                is JsonArray -> throw v1Error(e)
+                else -> throw IOException("Unexpected reply from bridge")
+            }
+        }
+    }
+
+    /** POST /api/<key>/<path>; returns the new resource's id. */
+    suspend fun v1Post(t: Target, path: String, body: JsonObject): String = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url("https://${t.host}/api/${t.key}/$path")
+            .post(body.toString().toRequestBody(jsonType)).build()
+        http.newCall(req).await().use { resp ->
+            val arr = runCatching { HueJson.parseToJsonElement(resp.body!!.string()).jsonArray }.getOrNull()
+                ?: throw IOException("HTTP ${resp.code}")
+            arr.objects().firstNotNullOfOrNull { it.obj("success")?.str("id") } ?: throw v1Error(arr)
+        }
+    }
+
+    suspend fun v1Delete(t: Target, path: String): Unit = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url("https://${t.host}/api/${t.key}/$path").delete().build()
+        http.newCall(req).await().use { resp ->
+            val arr = runCatching { HueJson.parseToJsonElement(resp.body!!.string()).jsonArray }.getOrNull()
+                ?: throw IOException("HTTP ${resp.code}")
+            // Already gone (type 3) counts as deleted.
+            if (arr.objects().none { it.containsKey("success") } && arr.objects().none { it.obj("error")?.int("type") == 3 }) {
+                throw v1Error(arr)
+            }
+        }
+    }
+
+    private fun v1Error(arr: JsonArray): IOException {
+        val err = arr.objects().firstNotNullOfOrNull { it.obj("error") }
+        return if (err?.int("type") == 1) UnauthorizedException()
+        else HueApiException(err?.str("description") ?: "Bridge rejected the request")
+    }
+
     /** Streams bridge events until the connection closes. Each callback gets one SSE payload. */
     suspend fun stream(t: Target, onOpen: () -> Unit, onEvents: (JsonArray) -> Unit) = withContext(Dispatchers.IO) {
         val req = Request.Builder()

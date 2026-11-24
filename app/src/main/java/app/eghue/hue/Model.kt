@@ -23,6 +23,41 @@ data class LightUi(
     val reachable: Boolean,
     /** Display colour of the light's current colour at full brightness. */
     val color: Int,
+    /** What the light does when it gets power (wall switch, power cut). Null if unsupported. */
+    val powerOn: PowerOn? = null,
+    /** Legacy (v1) id, e.g. "/lights/3"; used for remote rules. */
+    val idV1: String? = null,
+)
+
+/** Hue "power-on behaviour" (`powerup`). Custom values are only meaningful for [PowerOn.CUSTOM]. */
+data class PowerOn(
+    val preset: String,
+    val brightness: Float? = null,
+    val mirek: Int? = null,
+    val xy: Xy? = null,
+) {
+    companion object {
+        const val SAFETY = "safety"
+        const val POWERFAIL = "powerfail"
+        const val LAST_ON_STATE = "last_on_state"
+        const val CUSTOM = "custom"
+        /** Hue's "safety" preset: warm white at full brightness. */
+        const val SAFETY_MIREK = 366
+    }
+}
+
+/** A Hue remote (dimmer switch, smart button, tap dial, ...). */
+data class RemoteUi(
+    val id: String,
+    val name: String,
+    val modelId: String?,
+    val productName: String?,
+    val battery: Int?,
+    /** Legacy sensor id ("/sensors/2") that bridge rules use for this remote's buttons. */
+    val sensorV1: String?,
+    /** Button control ids (1-based), in order. */
+    val buttons: List<Int>,
+    val reachable: Boolean,
 )
 
 data class GroupUi(
@@ -45,6 +80,7 @@ data class GroupUi(
     val mirek: Int?,
     val xy: Xy?,
     val ctActive: Boolean,
+    val idV1: String? = null,
 )
 
 data class SceneUi(
@@ -53,6 +89,7 @@ data class SceneUi(
     val groupId: String,
     val colors: List<Int>,
     val active: Boolean,
+    val idV1: String? = null,
 )
 
 data class HomeUi(
@@ -61,6 +98,7 @@ data class HomeUi(
     val lights: List<LightUi>,
     val scenes: Map<String, List<SceneUi>>,
     val homeGroupedLightId: String?,
+    val remotes: List<RemoteUi> = emptyList(),
 ) {
     private val lightIndex: Map<String, LightUi> by lazy { lights.associateBy { it.id } }
     private val groupIndex: Map<String, GroupUi> by lazy { (rooms + zones).associateBy { it.id } }
@@ -137,6 +175,7 @@ fun deriveHome(resources: Collection<JsonObject>): HomeUi {
             mirek = lead?.mirek,
             xy = lead?.xy,
             ctActive = lead?.ctActive ?: true,
+            idV1 = o.str("id_v1"),
         )
     }
 
@@ -149,7 +188,29 @@ fun deriveHome(resources: Collection<JsonObject>): HomeUi {
 
     val homeGl = ofType("bridge_home").firstOrNull()?.refs("services")?.firstOrNull { it.rtype == "grouped_light" }?.rid
 
-    return HomeUi(rooms, zones, lights, scenes, homeGl)
+    val buttons = ofType("button")
+    val batteries = ofType("device_power").mapNotNull { p ->
+        val owner = p.ref("owner")?.rid ?: return@mapNotNull null
+        p.obj("power_state")?.int("battery_level")?.let { owner to it }
+    }.toMap()
+    val remotes = devices.values.mapNotNull { d ->
+        val buttonIds = d.refs("services").filter { it.rtype == "button" }.map { it.rid }.toSet()
+        if (buttonIds.isEmpty()) return@mapNotNull null
+        val own = buttons.filter { it.str("id") in buttonIds }
+        val id = d.str("id") ?: return@mapNotNull null
+        RemoteUi(
+            id = id,
+            name = d.obj("metadata")?.str("name") ?: "Remote",
+            modelId = d.obj("product_data")?.str("model_id"),
+            productName = d.obj("product_data")?.str("product_name"),
+            battery = batteries[id],
+            sensorV1 = own.firstNotNullOfOrNull { it.str("id_v1") } ?: d.str("id_v1"),
+            buttons = own.mapNotNull { it.obj("metadata")?.int("control_id") }.sorted().ifEmpty { (1..own.size).toList() },
+            reachable = connected[id] ?: true,
+        )
+    }.sortedWith(compareBy(nameOrder) { it.name })
+
+    return HomeUi(rooms, zones, lights, scenes, homeGl, remotes)
 }
 
 private fun deriveLight(l: JsonObject, devices: Map<String, JsonObject>, connected: Map<String, Boolean>): LightUi? {
@@ -190,6 +251,8 @@ private fun deriveLight(l: JsonObject, devices: Map<String, JsonObject>, connect
         ctActive = ctActive,
         reachable = ownerId?.let { connected[it] } ?: true,
         color = display,
+        powerOn = l.obj("powerup")?.let(::parsePowerOn),
+        idV1 = l.str("id_v1"),
     )
 }
 
@@ -220,5 +283,19 @@ private fun deriveScene(s: JsonObject): SceneUi? {
         groupId = group,
         colors = colors.take(4),
         active = status != "inactive",
+        idV1 = s.str("id_v1"),
     )
+}
+
+fun parsePowerOn(p: JsonObject): PowerOn {
+    val preset = p.str("preset") ?: PowerOn.SAFETY
+    if (preset != PowerOn.CUSTOM) return PowerOn(preset)
+    val bri = p.obj("dimming")?.takeIf { it.str("mode") == "dimming" }?.obj("dimming")?.dbl("brightness")?.toFloat()
+    val color = p.obj("color")
+    val mirek = color?.takeIf { it.str("mode") == "color_temperature" }?.obj("color_temperature")?.int("mirek")
+    val xy = color?.takeIf { it.str("mode") == "color" }?.obj("color")?.obj("xy")?.let { o ->
+        val x = o.dbl("x"); val y = o.dbl("y")
+        if (x != null && y != null) Xy(x, y) else null
+    }
+    return PowerOn(preset, bri, mirek, xy)
 }

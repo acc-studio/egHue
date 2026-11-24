@@ -53,16 +53,20 @@ def build_state():
         return o
 
     lights = {}
+    counter = {"light": 0, "group": 80}
 
-    def light(name, archetype, on, bri, kind):
+    def light(name, archetype, on, bri, kind, powerup=None):
         dev_id, light_id, zb_id = rid(), rid(), rid()
-        add({"id": dev_id, "type": "device", "metadata": {"name": name, "archetype": archetype},
+        counter["light"] += 1
+        v1 = "/lights/%d" % counter["light"]
+        add({"id": dev_id, "type": "device", "id_v1": v1, "metadata": {"name": name, "archetype": archetype},
              "product_data": {"model_id": "LCA001"},
              "services": [{"rid": light_id, "rtype": "light"}, {"rid": zb_id, "rtype": "zigbee_connectivity"}]})
         add({"id": zb_id, "type": "zigbee_connectivity", "owner": {"rid": dev_id, "rtype": "device"}, "status": "connected"})
-        o = {"id": light_id, "type": "light", "owner": {"rid": dev_id, "rtype": "device"},
+        o = {"id": light_id, "type": "light", "id_v1": v1, "owner": {"rid": dev_id, "rtype": "device"},
              "metadata": {"name": name, "archetype": archetype}, "on": {"on": on},
              "dimming": {"brightness": float(bri), "min_dim_level": 2.0}}
+        o["powerup"] = powerup_state(powerup or {"preset": "safety"}, kind)
         if kind in ("color", "ct"):
             o["color_temperature"] = {"mirek": 366, "mirek_valid": True,
                                       "mirek_schema": {"mirek_minimum": 153, "mirek_maximum": 500}}
@@ -74,8 +78,11 @@ def build_state():
         lights[name] = (dev_id, light_id)
         return dev_id, light_id
 
-    light("Sofa lamp", "sultan_bulb", True, 70, "color")
-    light("Ceiling", "ceiling_round", True, 100, "ct")
+    light("Sofa lamp", "sultan_bulb", True, 70, "color", {"preset": "last_on_state"})
+    light("Ceiling", "ceiling_round", True, 100, "ct", {
+        "preset": "custom", "on": {"mode": "on", "on": {"on": True}},
+        "dimming": {"mode": "dimming", "dimming": {"brightness": 65.2}},
+        "color": {"mode": "color_temperature", "color_temperature": {"mirek": 428}}})
     light("Floor lamp", "floor_shade", False, 40, "color")
     light("Pendant", "pendant_round", True, 55, "ct")
     light("Counter strip", "hue_lightstrip", False, 80, "color")
@@ -89,9 +96,11 @@ def build_state():
             children = [{"rid": lights[n][0], "rtype": "device"} for n in member_names]
         else:
             children = [{"rid": lights[n][1], "rtype": "light"} for n in member_names]
-        add({"id": gid, "type": kind, "metadata": {"name": name, "archetype": archetype},
+        counter["group"] += 1
+        v1 = "/groups/%d" % counter["group"]
+        add({"id": gid, "type": kind, "id_v1": v1, "metadata": {"name": name, "archetype": archetype},
              "children": children, "services": [{"rid": glid, "rtype": "grouped_light"}]})
-        add({"id": glid, "type": "grouped_light", "owner": {"rid": gid, "rtype": kind},
+        add({"id": glid, "type": "grouped_light", "id_v1": v1, "owner": {"rid": gid, "rtype": kind},
              "on": {"on": False}, "dimming": {"brightness": 0.0}})
         return gid
 
@@ -110,7 +119,7 @@ def build_state():
         actions = []
         for i, n in enumerate(member_names):
             actions.append({"target": {"rid": lights[n][1], "rtype": "light"}, "action": action_for(i)})
-        add({"id": rid(), "type": "scene", "metadata": {"name": name},
+        add({"id": rid(), "type": "scene", "id_v1": "/scenes/" + uuid.uuid4().hex[:16], "metadata": {"name": name},
              "group": {"rid": group_id, "rtype": state[group_id]["type"]},
              "actions": actions, "status": {"active": "inactive"}, "speed": 0.6})
 
@@ -129,6 +138,30 @@ def build_state():
           lambda i: {"on": {"on": True}, "dimming": {"brightness": 25.0}, "color": {"xy": [{"x": 0.16, "y": 0.1}, {"x": 0.3, "y": 0.14}, {"x": 0.17, "y": 0.06}][i]}})
     for gl in [o for o in res if o["type"] == "grouped_light"]:
         recompute_group(gl["id"])
+
+    # A Hue dimmer switch (RWL022) with the factory button setup, as v1 rules on the living room.
+    dev_id, zb_id, pw_id = rid(), rid(), rid()
+    button_ids = [rid() for _ in range(4)]
+    add({"id": dev_id, "type": "device", "id_v1": "/sensors/2", "metadata": {"name": "Living room dimmer", "archetype": "unknown_archetype"},
+         "product_data": {"model_id": "RWL022", "product_name": "Hue dimmer switch", "manufacturer_name": "Signify Netherlands B.V."},
+         "services": [{"rid": zb_id, "rtype": "zigbee_connectivity"}] + [{"rid": b, "rtype": "button"} for b in button_ids]
+         + [{"rid": pw_id, "rtype": "device_power"}]})
+    add({"id": zb_id, "type": "zigbee_connectivity", "owner": {"rid": dev_id, "rtype": "device"}, "status": "connected"})
+    add({"id": pw_id, "type": "device_power", "owner": {"rid": dev_id, "rtype": "device"},
+         "power_state": {"battery_state": "normal", "battery_level": 87}})
+    for i, b in enumerate(button_ids):
+        add({"id": b, "type": "button", "id_v1": "/sensors/2", "owner": {"rid": dev_id, "rtype": "device"},
+             "metadata": {"control_id": i + 1}, "button": {"event_values": ["initial_press", "repeat", "short_release", "long_release", "long_press"]}})
+    v1_sensors["2"] = {"name": "Living room dimmer", "type": "ZLLSwitch", "modelid": "RWL022",
+                       "state": {"buttonevent": 1002, "lastupdated": "none"}}
+    v1_sensors["4"] = {"name": "Dimmer switch hue-press", "type": "CLIPGenericStatus", "modelid": "Automation MultiplePresses Event",
+                       "state": {"status": 0, "lastupdated": "none"}}
+    lg = state[living]["id_v1"]
+    with open(os.path.join(HERE, "..", "app", "src", "test", "resources", "factory_dimmer_rules.json"), encoding="utf-8") as f:
+        factory = json.load(f)
+    for k, r in factory.items():
+        v1_rules[k] = json.loads(json.dumps(r).replace("/groups/81/", lg + "/"))
+    next_id["n"] = 100
 
 
 def lights_of_group(owner_id):
@@ -183,7 +216,123 @@ def apply_light(light, body):
             light["color_temperature"]["mirek"] = None
             light["color_temperature"]["mirek_valid"] = False
             changed["color_temperature"] = {"mirek": None, "mirek_valid": False}
+    if "powerup" in body:
+        kind = "color" if "color" in light else ("ct" if "color_temperature" in light else "dim")
+        light["powerup"] = powerup_state(body["powerup"], kind)
+        changed["powerup"] = light["powerup"]
     return changed
+
+
+def powerup_state(p, kind):
+    """Expands a powerup preset the way the bridge reports it."""
+    preset = p.get("preset", "safety")
+    if preset == "custom":
+        out = {"preset": "custom", "configured": True, "on": p.get("on", {"mode": "on", "on": {"on": True}}),
+               "dimming": p.get("dimming", {"mode": "previous"})}
+        if kind != "dim":
+            out["color"] = p.get("color", {"mode": "previous"})
+        return out
+    if preset == "safety":
+        out = {"preset": "safety", "configured": True, "on": {"mode": "on", "on": {"on": True}},
+               "dimming": {"mode": "dimming", "dimming": {"brightness": 100.0}}}
+        if kind != "dim":
+            out["color"] = {"mode": "color_temperature", "color_temperature": {"mirek": 366}}
+        return out
+    out = {"preset": preset, "configured": True,
+           "on": {"mode": "previous"} if preset == "powerfail" else {"mode": "on", "on": {"on": True}},
+           "dimming": {"mode": "previous"}}
+    if kind != "dim":
+        out["color"] = {"mode": "previous"}
+    return out
+
+
+# ---- v1 API: sensors and rules, with a small rule engine ----------------------------------
+
+v1_sensors = {}
+v1_rules = {}
+next_id = {"n": 100}
+
+
+def v1_light(path):
+    for o in state.values():
+        if o["type"] == "light" and o.get("id_v1") == path:
+            return o
+
+
+def v1_group_lights(path):
+    if path == "/groups/0":
+        return [o for o in state.values() if o["type"] == "light"]
+    for o in state.values():
+        if o["type"] in ("room", "zone") and o.get("id_v1") == path:
+            return lights_of_group(o["id"])
+    return []
+
+
+def v1_to_v2(body, light=None):
+    out = {}
+    if "on" in body:
+        out["on"] = {"on": bool(body["on"])}
+    if "bri" in body:
+        out["dimming"] = {"brightness": round(body["bri"] / 2.54, 1)}
+    if "bri_inc" in body and light is not None:
+        out["dimming"] = {"brightness": max(1.0, min(100.0, light["dimming"]["brightness"] + body["bri_inc"] / 2.54))}
+    if "ct" in body:
+        out["color_temperature"] = {"mirek": body["ct"]}
+    if "xy" in body:
+        out["color"] = {"xy": {"x": body["xy"][0], "y": body["xy"][1]}}
+    return out
+
+
+def run_action(a):
+    addr, body = a["address"], a.get("body", {})
+    if addr.startswith("/sensors/") and addr.endswith("/state"):
+        sid = addr.split("/")[2]
+        if sid in v1_sensors:
+            v1_sensors[sid]["state"].update(body)
+        return
+    if addr.startswith("/lights/") and addr.endswith("/state"):
+        l = v1_light(addr[:-len("/state")])
+        if l:
+            handle_put("light", l["id"], v1_to_v2(body, l))
+        return
+    if addr.startswith("/groups/") and addr.endswith("/action"):
+        g = addr[:-len("/action")]
+        if "scene" in body:
+            for s in state.values():
+                if s["type"] == "scene" and s.get("id_v1") == "/scenes/" + body["scene"]:
+                    handle_put("scene", s["id"], {"recall": {"action": "active"}})
+            return
+        for l in v1_group_lights(g):
+            handle_put("light", l["id"], v1_to_v2(body, l))
+
+
+def check(c, sensor_id, event_code):
+    addr, op, val = c["address"], c["operator"], c.get("value")
+    if addr == "/sensors/%s/state/buttonevent" % sensor_id:
+        return op == "eq" and int(val) == event_code
+    if addr == "/sensors/%s/state/lastupdated" % sensor_id:
+        return op == "dx"
+    if addr.endswith("/state/lastupdated"):
+        return False  # timers (ddx) on other sensors don't fire on a press
+    if addr.endswith("/state/status"):
+        sid = addr.split("/")[2]
+        return op == "eq" and str(v1_sensors.get(sid, {}).get("state", {}).get("status")) == str(val)
+    if addr.endswith("/state/any_on"):
+        any_on = any(l["on"]["on"] for l in v1_group_lights(addr[:-len("/state/any_on")]))
+        return op == "eq" and str(any_on).lower() == str(val).lower()
+    return False
+
+
+def press(sensor_id, event_code):
+    """Simulates a switch event and runs the matching rules (conditions first, then actions)."""
+    v1_sensors[sensor_id]["state"]["buttonevent"] = event_code
+    v1_sensors[sensor_id]["state"]["lastupdated"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    fired = [r for r in v1_rules.values()
+             if r.get("status") == "enabled" and r["conditions"] and all(check(c, sensor_id, event_code) for c in r["conditions"])]
+    for r in fired:
+        for a in r["actions"]:
+            run_action(a)
+    return [r["name"] for r in fired]
 
 
 def event(updates):
@@ -268,6 +417,16 @@ class Handler(BaseHTTPRequestHandler):
             if not self.authed():
                 return
             return self.stream()
+        if p.startswith("/api/" + APP_KEY + "/"):
+            what = p[len("/api/" + APP_KEY + "/"):]
+            with lock:
+                if what == "rules":
+                    return self.send_json(v1_rules)
+                if what == "sensors":
+                    return self.send_json(v1_sensors)
+                if what.startswith("rules/") and what[6:] in v1_rules:
+                    return self.send_json(v1_rules[what[6:]])
+            return self.send_json([{"error": {"type": 3, "address": "/" + what, "description": "resource not available"}}])
         if p.startswith("/clip/v2/resource"):
             if not self.authed():
                 return
@@ -288,6 +447,40 @@ class Handler(BaseHTTPRequestHandler):
             if auto_press or time.time() - link_pressed_at < 30:
                 return self.send_json([{"success": {"username": APP_KEY, "clientkey": "00112233445566778899AABBCCDDEEFF"}}])
             return self.send_json([{"error": {"type": 101, "address": "", "description": "link button not pressed"}}])
+        p = self.path.rstrip("/")
+        if p == "/debug/press":
+            b = self.body()
+            with lock:
+                fired = press(str(b["sensor"]), int(b["event"]))
+            print("press", b, "->", fired, flush=True)
+            return self.send_json({"fired": fired})
+        if p.startswith("/api/" + APP_KEY + "/"):
+            what = p[len("/api/" + APP_KEY + "/"):]
+            b = self.body()
+            with lock:
+                next_id["n"] += 1
+                new_id = str(next_id["n"])
+                if what == "rules":
+                    if not b.get("conditions") or not b.get("actions") or len(b.get("name", "")) > 32 or len(b["actions"]) > 8:
+                        return self.send_json([{"error": {"type": 7, "address": "/rules", "description": "invalid rule"}}])
+                    b.setdefault("status", "enabled")
+                    v1_rules[new_id] = b
+                elif what == "sensors":
+                    b.setdefault("state", {"status": 0})
+                    v1_sensors[new_id] = b
+                else:
+                    return self.send_json([{"error": {"type": 3, "address": "/" + what, "description": "not available"}}])
+            return self.send_json([{"success": {"id": new_id}}])
+        self.send_json({"errors": [{"description": "not found"}]}, 404)
+
+    def do_DELETE(self):
+        p = self.path.rstrip("/")
+        if p.startswith("/api/" + APP_KEY + "/rules/"):
+            rid_ = p.rsplit("/", 1)[1]
+            with lock:
+                if v1_rules.pop(rid_, None) is None:
+                    return self.send_json([{"error": {"type": 3, "address": "/rules/" + rid_, "description": "not available"}}])
+            return self.send_json([{"success": "/rules/%s deleted" % rid_}])
         self.send_json({"errors": [{"description": "not found"}]}, 404)
 
     def do_PUT(self):

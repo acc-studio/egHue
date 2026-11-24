@@ -33,6 +33,15 @@ class Settings(context: Context) {
     private val _dynamicColor = MutableStateFlow(prefs.getBoolean(K_DYNAMIC, true))
     val dynamicColor: StateFlow<Boolean> = _dynamicColor.asStateFlow()
 
+    private val _followPowerOn = MutableStateFlow(prefs.getBoolean(K_FOLLOW_POWER_ON, true))
+    /** Switch lights on in their power-on (default) state rather than their last state. */
+    val followPowerOn: StateFlow<Boolean> = _followPowerOn.asStateFlow()
+
+    fun setFollowPowerOn(enabled: Boolean) {
+        prefs.edit { putBoolean(K_FOLLOW_POWER_ON, enabled) }
+        _followPowerOn.value = enabled
+    }
+
     fun saveBridge(host: String, id: String, name: String, appKey: String, clientKey: String?, certPin: String?) {
         prefs.edit(commit = true) {
             putString(K_HOST, host)
@@ -84,5 +93,6 @@ class Settings(context: Context) {
         const val K_PIN = "cert_pin"
         const val K_THEME = "theme"
         const val K_DYNAMIC = "dynamic_color"
+        const val K_FOLLOW_POWER_ON = "follow_power_on"
     }
 }

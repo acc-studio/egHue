@@ -27,6 +27,7 @@ import app.eghue.AppContainer
 import app.eghue.container
 import app.eghue.ui.home.HomeScreen
 import app.eghue.ui.onboarding.OnboardingScreen
+import app.eghue.ui.settings.RemoteScreen
 import app.eghue.ui.settings.SettingsScreen
 import app.eghue.ui.theme.EgHueTheme
 import app.eghue.ui.theme.isAppInDarkTheme
@@ -71,9 +72,12 @@ private fun AppRoot(c: AppContainer) {
             "onboarding" -> OnboardingScreen()
             "settings" -> {
                 BackHandler { screen = "home" }
-                SettingsScreen(c, onBack = { screen = "home" })
+                SettingsScreen(c, onBack = { screen = "home" }, onOpenRemote = { screen = "remote:$it" })
             }
-            else -> HomeScreen(c, onOpenSettings = { screen = "settings" })
+            else -> if (s.startsWith("remote:")) {
+                BackHandler { screen = "settings" }
+                RemoteScreen(c, s.removePrefix("remote:"), onBack = { screen = "settings" })
+            } else HomeScreen(c, onOpenSettings = { screen = "settings" })
         }
     }
 }

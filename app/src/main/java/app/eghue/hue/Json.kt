@@ -80,3 +80,72 @@ val RECALL_BODY = buildJsonObject { putJsonObject("recall") { put("action", "act
 /** The parts of a grouped_light command that also apply to each member light. */
 fun memberPatch(body: JsonObject): JsonObject =
     JsonObject(body.filterKeys { it == "on" || it == "dimming" || it == "color" || it == "color_temperature" })
+
+// ---- Power-on behaviour ---------------------------------------------------------------------
+
+/** PUT body that stores [p] as the light's power-on behaviour, limited to what [light] supports. */
+fun powerUpBody(p: PowerOn, light: LightUi): JsonObject = buildJsonObject {
+    putJsonObject("powerup") {
+        put("preset", p.preset)
+        if (p.preset != PowerOn.CUSTOM) return@putJsonObject
+        putJsonObject("on") {
+            put("mode", "on")
+            putJsonObject("on") { put("on", true) }
+        }
+        if (light.dimmable) putJsonObject("dimming") {
+            if (p.brightness != null) {
+                put("mode", "dimming")
+                putJsonObject("dimming") { put("brightness", (p.brightness.coerceIn(1f, 100f) * 10).toInt() / 10.0) }
+            } else put("mode", "previous")
+        }
+        if (light.supportsColor || light.supportsCt) putJsonObject("color") {
+            when {
+                p.xy != null && light.supportsColor -> {
+                    put("mode", "color")
+                    putJsonObject("color") { putJsonObject("xy") { put("x", p.xy.x); put("y", p.xy.y) } }
+                }
+                p.mirek != null && light.supportsCt -> {
+                    put("mode", "color_temperature")
+                    putJsonObject("color_temperature") { put("mirek", p.mirek.coerceIn(light.mirekMin, light.mirekMax)) }
+                }
+                else -> put("mode", "previous")
+            }
+        }
+    }
+}
+
+/**
+ * The command that switches [l] on. When [followPowerOn] is set, lights with a custom (or Hue
+ * default) power-on behaviour come on in that state, the same as after flipping the wall switch.
+ * Lights set to "last on state" / "power loss recovery" simply come back as they were.
+ */
+fun switchOnBody(l: LightUi, followPowerOn: Boolean): JsonObject {
+    val p = l.powerOn
+    if (!followPowerOn || p == null) return onBody(true)
+    return when (p.preset) {
+        PowerOn.CUSTOM -> buildJsonObject {
+            putJsonObject("on") { put("on", true) }
+            if (l.dimmable && p.brightness != null) putJsonObject("dimming") { put("brightness", p.brightness.toDouble()) }
+            when {
+                p.xy != null && l.supportsColor -> putJsonObject("color") { putJsonObject("xy") { put("x", p.xy.x); put("y", p.xy.y) } }
+                p.mirek != null && l.supportsCt -> putJsonObject("color_temperature") { put("mirek", p.mirek) }
+            }
+        }
+        PowerOn.SAFETY -> buildJsonObject {
+            putJsonObject("on") { put("on", true) }
+            if (l.dimmable) putJsonObject("dimming") { put("brightness", 100.0) }
+            if (l.supportsCt) putJsonObject("color_temperature") { put("mirek", PowerOn.SAFETY_MIREK.coerceIn(l.mirekMin, l.mirekMax)) }
+        }
+        else -> onBody(true)
+    }
+}
+
+/** True if [body] sets more than just on/off (so it can't be replaced by one group command). */
+fun JsonObject.setsState(): Boolean = keys.any { it != "on" }
+
+/** Local-only colour-mode hint matching a command body, for the optimistic UI. */
+fun JsonObject.colorModeHint(): JsonObject? = when {
+    containsKey("color") -> CT_INACTIVE
+    containsKey("color_temperature") -> CT_ACTIVE
+    else -> null
+}

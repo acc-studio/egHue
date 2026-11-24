@@ -11,8 +11,10 @@ import android.net.NetworkRequest
 import android.util.Base64
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -108,19 +110,37 @@ class NetworkMonitor(context: Context) {
         }
     }
 
-    val hasLan: Boolean get() = lan != null
+    val hasLan: Boolean get() = currentLan() != null
+
+    /**
+     * The current Wi-Fi/Ethernet network and its link properties, checked against the system rather
+     * than trusted from callbacks: those can be missed while the process is frozen in the background,
+     * leaving a network that has since been replaced.
+     */
+    @Suppress("DEPRECATION") // allNetworks is the only synchronous lookup; fine for this use.
+    private fun currentLan(): Pair<Network, LinkProperties>? = runCatching {
+        fun usable(n: Network): Pair<Network, LinkProperties>? {
+            val caps = cm.getNetworkCapabilities(n) ?: return null
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return null
+            if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                !caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) return null
+            val link = cm.getLinkProperties(n) ?: return null
+            return n to link
+        }
+        lan?.let(::usable)?.let { return@runCatching it }
+        cm.allNetworks.firstNotNullOfOrNull(::usable)?.also { (n, link) -> lan = n; lanLink = link }
+    }.getOrNull()
 
     /** The LAN network to bind to if [host] is an IPv4 address on its subnet, else null (default routing). */
     fun networkFor(host: String?): Network? {
         val address = host?.let(::parseIpv4) ?: return null
-        val net = lan ?: return null
-        val link = lanLink ?: return null
+        val (net, link) = currentLan() ?: return null
         return if (link.linkAddresses.any { it.contains(address) }) net else null
     }
 
     /** Our own IPv4 address and prefix length on the LAN, for a subnet scan. */
     fun lanIpv4(): Pair<Inet4Address, Int>? {
-        val link = lanLink ?: return null
+        val link = currentLan()?.second ?: return null
         val la = link.linkAddresses.firstOrNull { it.address is Inet4Address } ?: return null
         return (la.address as Inet4Address) to la.prefixLength
     }
@@ -149,14 +169,42 @@ class NetworkMonitor(context: Context) {
     }
 }
 
-/** Creates sockets on the LAN network chosen by [network] (re-evaluated per connection). */
-class LanSocketFactory(private val network: () -> Network?) : SocketFactory() {
-    private fun delegate(): SocketFactory = network()?.socketFactory ?: getDefault()
-    override fun createSocket(): Socket = delegate().createSocket()
-    override fun createSocket(host: String?, port: Int): Socket = delegate().createSocket(host, port)
+/**
+ * Creates sockets bound to the LAN network from [bound] (re-evaluated per connection), falling back
+ * to default routing when binding is refused. A non-bypassable VPN such as AdGuard makes Android
+ * reject binding to Wi-Fi with EPERM; default routing then sends the traffic through the VPN, which
+ * forwards local-network traffic to the bridge.
+ */
+class LanSocketFactory(private val bound: () -> SocketFactory?) : SocketFactory() {
+    override fun createSocket(): Socket {
+        val factory = bound() ?: return getDefault().createSocket()
+        // An unconnected socket is bound to the network at creation, so any failure here is the bind.
+        return try {
+            factory.createSocket()
+        } catch (e: IOException) {
+            android.util.Log.i("egHue", "Can't bind to the LAN (${e.message}); using default routing")
+            getDefault().createSocket()
+        }
+    }
+
+    override fun createSocket(host: String?, port: Int): Socket =
+        connect(InetSocketAddress(host, port), null)
     override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int): Socket =
-        delegate().createSocket(host, port, localHost, localPort)
-    override fun createSocket(host: InetAddress?, port: Int): Socket = delegate().createSocket(host, port)
+        connect(InetSocketAddress(host, port), InetSocketAddress(localHost, localPort))
+    override fun createSocket(host: InetAddress?, port: Int): Socket =
+        connect(InetSocketAddress(host, port), null)
     override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int): Socket =
-        delegate().createSocket(address, port, localAddress, localPort)
+        connect(InetSocketAddress(address, port), InetSocketAddress(localAddress, localPort))
+
+    private fun connect(remote: InetSocketAddress, local: InetSocketAddress?): Socket {
+        val socket = createSocket()
+        try {
+            if (local != null) socket.bind(local)
+            socket.connect(remote)
+        } catch (e: IOException) {
+            runCatching { socket.close() }
+            throw e
+        }
+        return socket
+    }
 }

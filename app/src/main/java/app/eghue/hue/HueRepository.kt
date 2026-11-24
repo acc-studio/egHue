@@ -34,6 +34,7 @@ import java.io.File
 import java.io.IOException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLException
@@ -211,6 +212,8 @@ class HueRepository(
         synchronized(lock) { server = list.mapNotNull { o -> o.str("id")?.let { it to o } }.toMap() }
         lastSync = SystemClock.elapsedRealtime()
         _loaded.value = true
+        // The bridge is reachable again, so the widget's "can't reach" note no longer applies.
+        _widgetError.value = false
         publish()
         persistRequests.tryEmit(Unit)
     }
@@ -588,6 +591,8 @@ class HueRepository(
         is ConnectException, is NoRouteToHostException, is SocketTimeoutException, is UnknownHostException ->
             if (network.hasLan) "Can't reach your Hue Bridge" else "Not connected to Wi-Fi"
         is SSLException -> "Secure connection to the bridge failed"
+        // Low-level socket errors (e.g. "Binding socket … EPERM") mean nothing to people.
+        is SocketException -> if (network.hasLan) "Can't reach your Hue Bridge" else "Not connected to Wi-Fi"
         is IOException -> e.message ?: "Connection problem"
         else -> "Connection problem"
     }

@@ -67,7 +67,7 @@ class AppContainer(val app: Application) {
         .writeTimeout(5, TimeUnit.SECONDS)
         .sslSocketFactory(tls.socketFactory, tls.trustManager)
         .hostnameVerifier(tls.hostnameVerifier)
-        .socketFactory(LanSocketFactory { network.networkFor(settings.bridgeHost) })
+        .socketFactory(LanSocketFactory { network.networkFor(settings.bridgeHost)?.socketFactory })
         .build()
 
     private val sseHttp = bridgeHttp.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).build()

@@ -3,7 +3,11 @@ package app.eghue
 import app.eghue.shortcuts.LauncherShortcuts
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.Lifecycle
@@ -20,6 +24,7 @@ import app.eghue.update.AppUpdater
 import app.eghue.update.createUpdater
 import app.eghue.widget.HueWidget
 import app.eghue.widget.WidgetPrefs
+import app.eghue.widget.WidgetSync
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -103,12 +108,31 @@ class AppContainer(val app: Application) {
                 .debounce(1_000)
                 .collect { (_, home) -> if (home.rooms.isNotEmpty()) LauncherShortcuts.publish(app, home) }
         }
+        // On unlock, follow the bridge live for a minute so widgets show what changed while the
+        // phone was locked (wall switches, automations, the Hue app) and keep up from there.
+        val unlocked = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                scope.launch {
+                    val ids = runCatching { GlanceAppWidgetManager(app).getGlanceIds(HueWidget::class.java) }.getOrDefault(emptyList())
+                    if (ids.isNotEmpty()) repository.keepLive(60_000)
+                }
+            }
+        }
+        scope.launch {
+            val ids = runCatching { GlanceAppWidgetManager(app).getGlanceIds(HueWidget::class.java) }.getOrDefault(emptyList())
+            if (ids.isNotEmpty()) WidgetSync.schedule(app)
+        }
+        ContextCompat.registerReceiver(
+            app, unlocked,
+            IntentFilter().apply { addAction(Intent.ACTION_USER_PRESENT); addAction(Intent.ACTION_SCREEN_ON) },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         // Keep home-screen widgets in step with changes made in the app or by other Hue apps.
         scope.launch {
             repository.home.drop(1)
                 .map { widgetPrefs.fingerprint(it) }
                 .distinctUntilChanged()
-                .debounce(250)
+                .debounce(150)
                 .collect {
                     val ids = runCatching { GlanceAppWidgetManager(app).getGlanceIds(HueWidget::class.java) }.getOrDefault(emptyList())
                     if (ids.isNotEmpty()) runCatching { HueWidget().updateAll(app) }

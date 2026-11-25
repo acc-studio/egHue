@@ -116,13 +116,17 @@ Opens as a bottom sheet over the home screen:
 - **Setup:** when you add the widget, pick which **rooms, zones and/or lights** it shows.
   All rooms are ticked to start with. Long-press the widget › *Reconfigure* to change it later.
 - **One tap toggles**, and the tile changes at once. It works even when the app isn't running: the
-  widget starts the process, checks the current state if its cache is older than 15 s, then switches.
+  widget starts the process, quickly re-reads lights and room switches if its cache is older than 8 s,
+  then switches.
+- **Dimming:** tap a tile's percentage for a dimmer sheet over the home screen (brightness bar and
+  on/off). With *Dim buttons* on in setup, each row also has − and + (10% steps, never switches off).
 - **Clear state:** *on* tiles glow in the light's real colour and show the brightness; *off* tiles are
   muted and say `Off`.
 - **Responsive layout:** 1 column on narrow widgets, 2 at 4 cells wide, 3 when wider. Tiles grow or
   shrink to fill the height and scroll when there are too many.
-- **Stays current:** it refreshes when the app changes something, when another Hue app or switch
-  changes something while egHue is open, and every 30 min in the background.
+- **Stays current:** it follows the bridge live while egHue is open and for 90 s after a widget tap,
+  and otherwise resyncs on a non-waking alarm every 5 min while the phone is awake (and as soon as the
+  screen comes on if one came due while it was off). A resync never rolls back a newer change.
 - Follows the system theme (and Material You colours).
 - If the bridge can't be reached, a small "Can't reach the bridge" line appears.
 
@@ -271,7 +275,7 @@ it up on their own.
 | Power-on behaviour per light | ✅ All four presets incl. custom; also per room |
 | Remote / switch button setup | ✅ Press & hold per button: toggle, scenes, scene cycle, dimming, all off |
 | Live sync with other apps and switches | ✅ Event stream |
-| Widget | ✅ Configurable, one-tap; rooms, zones, lights and scenes |
+| Widget | ✅ Configurable, one-tap; rooms, zones, lights and scenes; dimmer and − / + |
 | Quick Settings tiles, launcher shortcuts | ✅ All off; one room (chosen in Settings); long-press icon for rooms |
 | Light/dark/system theme | ✅ Plus Material You |
 | Creating or editing your own scenes | ✅ Save current look, rename, update, delete; full scene editor in Full view |

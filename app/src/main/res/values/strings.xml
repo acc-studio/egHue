@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">egHue</string>
     <string name="widget_name">egHue lights</string>
-    <string name="widget_description">Rooms, zones and lights. One tap turns them on or off.</string>
+    <string name="widget_description">Rooms, zones and lights. Tap to switch on or off, tap the percentage to dim.</string>
     <string name="update_channel">App updates</string>
     <string name="update_available_title">egHue update available</string>
     <string name="update_available_text">Version %1$s is ready to install.</string>

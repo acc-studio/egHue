@@ -11,6 +11,35 @@ The app has two faces:
 
 ---
 
+## Iteration 12 · v0.15.0 · Dimming from the widget, and a widget that keeps up
+
+**Why:** the widget could only switch things on and off, and it sometimes showed an old state.
+
+**What changed**
+- **Dim from the widget.** Tap a tile's percentage and a small dimmer sheet opens over the home
+  screen, with the app's brightness bar and an on/off switch. Tap outside to close.
+- **Dim buttons** (widget setup): one row per room or light with − and + in 10% steps. The steps
+  snap to the grid (37% → 40% / 30%) and never switch a light off. Needs a widget 3 cells wide.
+- **Sync fixes** (the cause of the lag):
+  - A full resync that started before a change could finish after it and put the old state back.
+    Resyncs now keep anything that changed while they were in flight.
+  - A widget tap no longer waits for a full resync (up to 2.5 s) before reacting. When the cached
+    state is old, it fetches just lights and room switches (two small requests), acts, and resyncs
+    in the background.
+  - For 90 s after any widget tap (and after unlocking, when Android lets the app hear it), egHue
+    listens to the bridge's live events. Changes from wall switches, sensors or the Hue app show on
+    the widget within a second or two.
+  - While the app isn't running, Android freezes it and holds back its broadcasts, so the unlock
+    signal alone isn't enough. Widgets now also resync on a non-waking alarm: every 5 minutes while
+    the phone is awake, nothing while it sleeps, and straight after the screen comes on if a resync
+    came due meanwhile.
+
+**Tested** on the emulator against the fake bridge: dimmer sheet, − / + including rapid taps, a
+change made directly on the bridge showing on the widget (live window, and via the alarm while
+the app was frozen), and the stale-resync race (reproduced before the fix, gone after).
+
+---
+
 ## Iteration 11 · v0.14.0 · Scenes on the widget
 
 **Why:** the widget is the fastest way into the lights, but it could only switch rooms. Playing a

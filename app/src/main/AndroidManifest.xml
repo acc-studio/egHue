@@ -47,6 +47,17 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/hue_widget_info" />
         </receiver>
+        <!-- Resyncs widgets on a non-waking alarm while the app isn't running. -->
+        <receiver android:name=".widget.WidgetSyncReceiver" android:exported="false" />
+
+        <!-- The widget's dimmer: a small sheet over the home screen. -->
+        <activity
+            android:name=".widget.DimActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="app.eghue.dim"
+            android:theme="@style/Theme.EgHue.Overlay" />
+
         <!-- Launcher-icon shortcuts ("toggle Living room"): does the job and closes, no UI. -->
         <activity
             android:name=".shortcuts.ShortcutActivity"

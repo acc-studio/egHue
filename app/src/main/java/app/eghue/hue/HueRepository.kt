@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.roundToInt
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -68,6 +69,42 @@ class HueRepository(
     private val lock = Any()
     private var server: Map<String, JsonObject> = emptyMap()
     private val overlays = HashMap<String, Overlay>()
+
+    // A resync (GET of everything) takes a moment; changes that land meanwhile (our own commands,
+    // bridge events) are newer than what it returns. Each local change stamps the resources it touched,
+    // and a resync keeps those resources as they are instead of rolling them back. Guarded by [lock].
+    private var changeSeq = 0L
+    private val touchedAt = HashMap<String, Long>()
+    private var fetchesInFlight = 0
+
+    private fun touchLocked(ids: Collection<String>) {
+        if (fetchesInFlight == 0) return
+        changeSeq++
+        ids.forEach { touchedAt[it] = changeSeq }
+    }
+
+    /** Runs [fetch] and merges what it returns into local state without undoing changes made meanwhile. */
+    private suspend fun fetchInto(replaceAll: Boolean, fetch: suspend () -> List<JsonObject>) {
+        val start = synchronized(lock) { fetchesInFlight++; changeSeq }
+        try {
+            val fetched = fetch()
+            synchronized(lock) {
+                val m = if (replaceAll) HashMap<String, JsonObject>() else server.toMutableMap()
+                fetched.forEach { o -> o.str("id")?.let { m[it] = o } }
+                for ((id, at) in touchedAt) {
+                    if (at <= start) continue
+                    val current = server[id]
+                    if (current != null) m[id] = current else m.remove(id)
+                }
+                server = m
+            }
+        } finally {
+            synchronized(lock) {
+                fetchesInFlight--
+                if (fetchesInFlight == 0) touchedAt.clear()
+            }
+        }
+    }
 
     private val _home = MutableStateFlow(HomeUi.Empty)
     val home: StateFlow<HomeUi> = _home.asStateFlow()
@@ -139,6 +176,45 @@ class HueRepository(
 
     fun reconnectNow() { if (settings.paired.value) restartLoop() }
 
+    /**
+     * Holds the live event stream open for [ms] even though the app isn't visible, so widgets follow
+     * changes made elsewhere (wall switches, the Hue app, automations) right away. Used after the
+     * phone is unlocked and after each widget tap.
+     */
+    fun keepLive(ms: Long) {
+        if (!settings.paired.value || foreground) return
+        if (loopJob?.isActive != true) restartLoop()
+        stopJob?.cancel()
+        stopJob = scope.launch {
+            delay(ms)
+            if (!foreground) {
+                loopJob?.cancel()
+                _connection.value = ConnState.Connecting
+            }
+        }
+    }
+
+    /**
+     * Brings lights and room switches up to date when the cached state may be old, quickly: two small
+     * requests instead of the full resync, which then follows in the background.
+     */
+    private suspend fun freshen(t: HueClient.Target) {
+        val age = SystemClock.elapsedRealtime() - lastSync
+        if (age < 8_000) return
+        withTimeoutOrNull(1_500) {
+            runCatching {
+                fetchInto(replaceAll = false) {
+                    coroutineScope {
+                        listOf("light", "grouped_light").map { type -> async { client.getType(t, type) } }.awaitAll().flatten()
+                    }
+                }
+                lastSync = SystemClock.elapsedRealtime()
+                publish()
+            }
+        }
+        scope.launch { runCatching { refresh(t) } }
+    }
+
     private fun restartLoop() {
         loopJob?.cancel()
         loopJob = scope.launch { connectionLoop() }
@@ -206,10 +282,16 @@ class HueRepository(
         scope.launch { runCatching { refresh(t) } }
     }
 
+    /** Resyncs unless the live stream is up or the last sync is recent; waits for it (widget alarms). */
+    suspend fun syncIfStale(maxAgeMs: Long) {
+        if (loopJob?.isActive == true && _connection.value == ConnState.Connected) return
+        if (SystemClock.elapsedRealtime() - lastSync < maxAgeMs) return
+        runCatching { refresh() }
+    }
+
     suspend fun refresh(t: HueClient.Target? = target()) {
         t ?: return
-        val list = client.getAll(t)
-        synchronized(lock) { server = list.mapNotNull { o -> o.str("id")?.let { it to o } }.toMap() }
+        fetchInto(replaceAll = true) { client.getAll(t) }
         lastSync = SystemClock.elapsedRealtime()
         _loaded.value = true
         // The bridge is reachable again, so the widget's "can't reach" note no longer applies.
@@ -225,6 +307,7 @@ class HueRepository(
                 val kind = container.str("type")
                 for (d in container.arr("data")?.objects().orEmpty()) {
                     val id = d.str("id") ?: continue
+                    if (kind != "update" || m.containsKey(id)) touchLocked(listOf(id))
                     when (kind) {
                         "update" -> m[id]?.let { m[id] = deepMerge(it, d) }
                         "add" -> m[id] = d
@@ -276,6 +359,7 @@ class HueRepository(
             val m = server.toMutableMap()
             for ((id, p) in patches) m[id]?.let { m[id] = deepMerge(it, p) }
             server = m
+            touchLocked(patches.keys.filter { it in m })
         }
         publish()
         persistRequests.tryEmit(Unit)
@@ -473,7 +557,7 @@ class HueRepository(
 
     /** Removes a resource from local state (after deleting it on the bridge). */
     private fun forget(id: String) {
-        synchronized(lock) { server = server - id; overlays.remove(id) }
+        synchronized(lock) { server = server - id; overlays.remove(id); touchLocked(listOf(id)) }
         publish()
         persistRequests.tryEmit(Unit)
     }
@@ -491,6 +575,7 @@ class HueRepository(
         synchronized(lock) {
             val existing = server[id]
             server = server + (id to (existing?.let { deepMerge(it, scene) } ?: scene))
+            touchLocked(listOf(id))
         }
         publish()
         persistRequests.tryEmit(Unit)
@@ -731,7 +816,7 @@ class HueRepository(
             put("actions", actions)
             if (name != null) putJsonObject("metadata") { put("name", name) }
         }
-        synchronized(lock) { server[sceneId]?.let { server = server + (sceneId to deepMerge(it, local)) } }
+        synchronized(lock) { server[sceneId]?.let { server = server + (sceneId to deepMerge(it, local)) }; touchLocked(listOf(sceneId)) }
         publish()
         persistRequests.tryEmit(Unit)
         markActive(groupId, sceneId)
@@ -741,7 +826,7 @@ class HueRepository(
     suspend fun renameScene(sceneId: String, name: String): Boolean = sceneOp("rename the scene") { t ->
         val body = buildJsonObject { putJsonObject("metadata") { put("name", name) } }
         client.put(t, "scene", sceneId, body)
-        synchronized(lock) { server[sceneId]?.let { server = server + (sceneId to deepMerge(it, body)) } }
+        synchronized(lock) { server[sceneId]?.let { server = server + (sceneId to deepMerge(it, body)) }; touchLocked(listOf(sceneId)) }
         publish()
         persistRequests.tryEmit(Unit)
         true
@@ -904,9 +989,9 @@ class HueRepository(
     suspend fun widgetToggle(kind: String, id: String, onOptimistic: suspend () -> Unit): Boolean {
         ensureLoaded()
         val t = target() ?: return false
-        // Without the app's live stream, state may be old: resync everything (lights included, since
-        // room brightness is derived from them) before deciding what the toggle should do.
-        if (SystemClock.elapsedRealtime() - lastSync > 15_000) withTimeoutOrNull(2_500) { runCatching { refresh(t) } }
+        // Without the app's live stream, state may be old: bring lights up to date before deciding
+        // what the toggle should do.
+        if (kind != KIND_SCENE) freshen(t)
         return try {
             if (kind == KIND_SCENE) {
                 if (synchronized(lock) { server[id] } == null) return false
@@ -936,6 +1021,44 @@ class HueRepository(
                     client.put(t, "grouped_light", gl, body)
                     commitToServer(groupPatches(gl, g.lightIds, body, null))
                 }
+            }
+            _widgetError.value = false
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            synchronized(lock) { overlays.clear() }
+            publish()
+            _widgetError.value = true
+            false
+        }
+    }
+
+    /**
+     * Steps a room/zone ("g") or light ("l") brighter or dimmer by [delta] percent for the widget.
+     * Never switches off: the dimmest step is 1%. Switches on if it was off.
+     */
+    suspend fun widgetStep(kind: String, id: String, delta: Int, onOptimistic: suspend () -> Unit): Boolean {
+        ensureLoaded()
+        val t = target() ?: return false
+        freshen(t)
+        fun next(on: Boolean, current: Float) = stepBrightness(on, current, delta)
+        return try {
+            if (kind == KIND_LIGHT) {
+                val l = _home.value.light(id) ?: return false
+                val body = brightnessBody(next(l.on, l.brightness))
+                addOverlays(mapOf(id to body))
+                onOptimistic()
+                client.put(t, "light", id, body)
+                commitToServer(mapOf(id to body))
+            } else {
+                val g = _home.value.group(id) ?: return false
+                val gl = g.groupedLightId ?: return false
+                val body = brightnessBody(next(g.on, g.brightness))
+                addOverlays(groupPatches(gl, g.lightIds, body, null))
+                onOptimistic()
+                client.put(t, "grouped_light", gl, body)
+                commitToServer(groupPatches(gl, g.lightIds, body, null))
             }
             _widgetError.value = false
             true
@@ -1011,6 +1134,18 @@ class HueRepository(
         const val KIND_GROUP = "g"
         const val KIND_LIGHT = "l"
         const val KIND_SCENE = "s"
+
+        /**
+         * One widget brightness step. Snaps to the step grid, so with 10% steps 37% goes to 40% or 30%.
+         * Never below 1% (the minus button dims, it doesn't switch off); from off, starts at one step.
+         */
+        fun stepBrightness(on: Boolean, current: Float, delta: Int): Float {
+            if (!on) return delta.coerceAtLeast(1).toFloat()
+            val c = (current * 10).roundToInt() / 10f
+            val snapped = if (delta > 0) kotlin.math.floor(c / delta) * delta + delta
+            else kotlin.math.ceil(c / -delta) * -delta + delta
+            return snapped.coerceIn(1f, 100f)
+        }
         private const val OVERLAY_MS = 1_500L
         private val IDENTIFY_BODY = buildJsonObject { putJsonObject("identify") { put("action", "identify") } }
     }

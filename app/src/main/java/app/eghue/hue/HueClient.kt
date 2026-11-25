@@ -82,6 +82,9 @@ class HueClient(
 
     suspend fun getAll(t: Target): List<JsonObject> = getData(t, "/clip/v2/resource")
 
+    /** Every resource of one type, e.g. all lights: much smaller and faster than [getAll]. */
+    suspend fun getType(t: Target, type: String): List<JsonObject> = getData(t, "/clip/v2/resource/$type")
+
     suspend fun get(t: Target, type: String, id: String): JsonObject? =
         getData(t, "/clip/v2/resource/$type/$id").firstOrNull()
 

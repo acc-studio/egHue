@@ -29,12 +29,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -109,7 +112,8 @@ private fun ComponentActivity.ConfigScreen(
     val paired by c.settings.paired.collectAsStateWithLifecycle()
     val home by c.repository.home.collectAsStateWithLifecycle()
     val loaded by c.repository.loaded.collectAsStateWithLifecycle()
-    val selected = remember { mutableStateListOf<String>().apply { addAll(initial) } }
+    val selected = remember { mutableStateListOf<String>().apply { addAll(initial.filter { it != WidgetPrefs.DIM_BUTTONS }) } }
+    var dimButtons by remember { mutableStateOf(WidgetPrefs.DIM_BUTTONS in initial) }
     val seeded = remember { booleanArrayOf(initial.isNotEmpty() || reconfiguring) }
 
     // First-time setup: start with all rooms ticked; that's what most people want.
@@ -142,7 +146,7 @@ private fun ComponentActivity.ConfigScreen(
             if (paired) Surface(tonalElevation = 3.dp) {
                 Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)) {
                     Button(
-                        onClick = { onDone(order.filter { it in selected }) },
+                        onClick = { onDone(order.filter { it in selected } + listOfNotNull(WidgetPrefs.DIM_BUTTONS.takeIf { dimButtons })) },
                         enabled = selected.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                     ) { Text(if (reconfiguring) "Save" else "Add widget (${selected.size})") }
@@ -169,6 +173,25 @@ private fun ComponentActivity.ConfigScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                item(key = "opt:dim") {
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        modifier = Modifier.fillMaxWidth().clickable { dimButtons = !dimButtons },
+                    ) {
+                        Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Dim buttons", style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    "A − and + on each row (widget 3 cells wide or more). Tapping the percentage always opens the dimmer.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(checked = dimButtons, onCheckedChange = { dimButtons = it })
+                        }
+                    }
+                }
                 sections.forEach { (title, options) ->
                     item(key = "h:$title") {
                         Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))

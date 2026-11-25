@@ -34,11 +34,16 @@ class WidgetPrefs(context: Context) {
     /** What a widget can display; used to skip widget refreshes when nothing visible changed. */
     fun fingerprint(home: HomeUi): Int {
         var h = 17
-        for (g in home.rooms + home.zones) h = 31 * h + (g.id + g.name + g.on + g.brightness.roundToInt() + g.color).hashCode()
+        for (g in home.rooms + home.zones) h = 31 * h + (g.id + g.name + g.on + g.brightness.roundToInt() + g.color + g.reachableLights + g.groupedLightId).hashCode()
         for (l in home.lights) h = 31 * h + (l.id + l.name + l.on + l.brightness.roundToInt() + l.color + l.reachable).hashCode()
         for (s in home.scenes.values.flatten()) h = 31 * h + (s.id + s.name + s.active).hashCode()
         return h
     }
 
     private fun key(id: Int) = "w_$id"
+
+    companion object {
+        /** Stored alongside the items: show the widget as a list with − / + dim buttons on each row. */
+        const val DIM_BUTTONS = "opt:dim"
+    }
 }

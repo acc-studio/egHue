@@ -18,6 +18,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
@@ -43,6 +44,7 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -100,14 +102,14 @@ class HueWidget : GlanceAppWidget() {
             val paired by c.settings.paired.collectAsState()
             val error by c.repository.widgetError.collectAsState()
             GlanceTheme {
-                WidgetBody(context, widgetId, paired, resolveItems(home, selection), selection.isEmpty(), error)
+                WidgetBody(context, widgetId, paired, resolveItems(home, selection), selection.isEmpty(), error, WidgetPrefs.DIM_BUTTONS in selection)
             }
         }
     }
 }
 
 @Composable
-private fun WidgetBody(context: Context, widgetId: Int, paired: Boolean, items: List<WidgetItem>, emptySelection: Boolean, error: Boolean) {
+private fun WidgetBody(context: Context, widgetId: Int, paired: Boolean, items: List<WidgetItem>, emptySelection: Boolean, error: Boolean, dimButtons: Boolean) {
     val size = LocalSize.current
     var root = GlanceModifier.fillMaxSize().appWidgetBackground().background(GlanceTheme.colors.widgetBackground).padding(6.dp)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) root = root.cornerRadius(android.R.dimen.system_app_widget_background_radius)
@@ -118,7 +120,7 @@ private fun WidgetBody(context: Context, widgetId: Int, paired: Boolean, items: 
                 if (emptySelection) "Tap to choose rooms" else "Loading…",
                 GlanceModifier.clickable(actionStartIntent(configureIntent(context, widgetId))),
             )
-            else -> Tiles(items, size, error)
+            else -> Tiles(items, size, error, dimButtons)
         }
     }
 }
@@ -131,9 +133,11 @@ private fun Message(text: String, modifier: GlanceModifier) {
 }
 
 @Composable
-private fun Tiles(items: List<WidgetItem>, size: DpSize, error: Boolean) {
+private fun Tiles(items: List<WidgetItem>, size: DpSize, error: Boolean, dimButtons: Boolean) {
     val gap = 5.dp
     val columns = when {
+        // A list with − / + on each row: one column, as long as the buttons leave room for names.
+        dimButtons && size.width >= 200.dp -> 1
         size.width >= 330.dp -> 3
         size.width >= 200.dp -> 2
         else -> 1
@@ -143,6 +147,7 @@ private fun Tiles(items: List<WidgetItem>, size: DpSize, error: Boolean) {
     val available = size.height - 12.dp - footer
     val fit = (available - gap * (rows.size - 1)) / rows.size
     val tileHeight: Dp = fit.coerceIn(38.dp, 76.dp)
+    val tileWidth = (size.width - 12.dp - gap * (columns - 1)) / columns
     val scrolls = ceil((tileHeight * rows.size + gap * (rows.size - 1)).value) > available.value + 1
     Column(GlanceModifier.fillMaxSize()) {
         LazyColumn(GlanceModifier.fillMaxWidth().defaultWeight()) {
@@ -151,7 +156,7 @@ private fun Tiles(items: List<WidgetItem>, size: DpSize, error: Boolean) {
                     Row(GlanceModifier.fillMaxWidth().height(tileHeight)) {
                         row.forEachIndexed { i, item ->
                             if (i > 0) Spacer(GlanceModifier.width(gap))
-                            Tile(item, GlanceModifier.defaultWeight().height(tileHeight), compact = tileHeight < 50.dp)
+                            Tile(item, GlanceModifier.defaultWeight().height(tileHeight), compact = tileHeight < 50.dp, steps = dimButtons && tileWidth >= 185.dp)
                         }
                         repeat(columns - row.size) {
                             Spacer(GlanceModifier.width(gap))
@@ -173,7 +178,7 @@ private fun Tiles(items: List<WidgetItem>, size: DpSize, error: Boolean) {
 }
 
 @Composable
-private fun Tile(item: WidgetItem, modifier: GlanceModifier, compact: Boolean) {
+private fun Tile(item: WidgetItem, modifier: GlanceModifier, compact: Boolean, steps: Boolean) {
     val scene = item.kind == HueRepository.KIND_SCENE
     val lit = ColorUtil.blend(item.color, 0xFFFFFFFF.toInt(), 0.12f)
     // Scene tiles always wear their colours: they're buttons, not switches.
@@ -188,6 +193,7 @@ private fun Tile(item: WidgetItem, modifier: GlanceModifier, compact: Boolean) {
         item.on -> "${item.brightness}%"
         else -> "Off"
     }
+    val dimmable = !scene && item.available && item.on
     Box(
         modifier.clickable(
             actionRunCallback<ToggleAction>(
@@ -213,8 +219,36 @@ private fun Tile(item: WidgetItem, modifier: GlanceModifier, compact: Boolean) {
                 style = TextStyle(color = fg, fontSize = if (compact) 14.sp else 15.sp, fontWeight = FontWeight.Bold),
                 modifier = GlanceModifier.defaultWeight(),
             )
-            Text(state, maxLines = 1, style = TextStyle(color = fg, fontSize = 12.sp, fontWeight = FontWeight.Medium))
+            if (dimmable && steps) StepButton("−", item, -STEP, fg)
+            // The percentage opens the full dimmer; the rest of the tile toggles.
+            val stateMod = when {
+                !dimmable -> GlanceModifier
+                steps -> GlanceModifier.width(42.dp)
+                else -> GlanceModifier.padding(start = 10.dp)
+            }.let { m ->
+                if (dimmable) m.fillMaxHeight().clickable(actionStartIntent(DimActivity.intent(LocalContext.current, item.kind, item.id))) else m
+            }
+            Box(stateMod, contentAlignment = Alignment.Center) {
+                Text(state, maxLines = 1, style = TextStyle(color = fg, fontSize = 12.sp, fontWeight = FontWeight.Medium))
+            }
+            if (dimmable && steps) StepButton("+", item, STEP, fg)
         }
+    }
+}
+
+private const val STEP = 10
+
+@Composable
+private fun StepButton(label: String, item: WidgetItem, delta: Int, fg: ColorProvider) {
+    Box(
+        GlanceModifier.width(32.dp).fillMaxHeight().clickable(
+            actionRunCallback<StepAction>(
+                actionParametersOf(ToggleAction.KindKey to item.kind, ToggleAction.IdKey to item.id, StepAction.DeltaKey to delta)
+            )
+        ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = TextStyle(color = fg, fontSize = 20.sp, fontWeight = FontWeight.Bold))
     }
 }
 
@@ -231,6 +265,8 @@ class ToggleAction : ActionCallback {
         val c = context.container
         c.repository.widgetToggle(kind, id) { HueWidget().updateAll(context) }
         HueWidget().updateAll(context)
+        // Follow what happens next (a motion sensor, someone at the wall switch) for a while.
+        c.repository.keepLive(90_000)
     }
 
     companion object {
@@ -239,8 +275,36 @@ class ToggleAction : ActionCallback {
     }
 }
 
+/** Runs when a widget − / + is tapped. */
+class StepAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val kind = parameters[ToggleAction.KindKey] ?: return
+        val id = parameters[ToggleAction.IdKey] ?: return
+        val delta = parameters[DeltaKey] ?: return
+        val c = context.container
+        c.repository.widgetStep(kind, id, delta) { HueWidget().updateAll(context) }
+        HueWidget().updateAll(context)
+        c.repository.keepLive(90_000)
+    }
+
+    companion object {
+        val DeltaKey = ActionParameters.Key<Int>("delta")
+    }
+}
+
 class HueWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = HueWidget()
+
+    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        // Also runs after a reboot or an app update, which clear alarms.
+        WidgetSync.schedule(context)
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        WidgetSync.cancel(context)
+    }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         super.onDeleted(context, appWidgetIds)

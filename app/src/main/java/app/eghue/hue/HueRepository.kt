@@ -418,7 +418,63 @@ class HueRepository(
             lightCommand(id, powerUpBody(powerOn, l))
         }
     }
-    fun setGroupBrightness(groupId: String, brightness: Float) = groupCommand(groupId, brightnessBody(brightness))
+    /**
+     * Dims a room or zone. When its lights are at different levels each one is scaled pro rata
+     * (see [GroupDimming]); otherwise one grouped command does the job.
+     */
+    fun setGroupBrightness(groupId: String, brightness: Float) {
+        val g = _home.value.group(groupId) ?: return
+        val plan = proRataPlan(g, brightness) ?: return groupCommand(groupId, brightnessBody(brightness))
+        g.groupedLightId?.let { addOverlays(mapOf(it to brightnessBody(brightness))) }
+        addOverlays(plan)
+        synchronized(lock) {
+            proRataPending[groupId] = plan
+            if (!proRataSending.add(groupId)) return
+        }
+        // One light command each per round, paced so a drag stays within the bridge's ~10/s.
+        scope.launch {
+            while (true) {
+                val next = synchronized(lock) {
+                    proRataPending.remove(groupId) ?: run { proRataSending.remove(groupId); null }
+                } ?: break
+                next.forEach { (id, body) -> queue.submit("light", id, body) }
+                delay((CommandQueue.defaultInterval("light") * next.size).coerceAtLeast(CommandQueue.defaultInterval("grouped_light")))
+            }
+        }
+    }
+
+    /** Levels a slider drag started from, kept while the lights still show what we last sent. */
+    private class ProRata(val baseline: Map<String, Float>, val sent: Map<String, Float>, val at: Long)
+    private val proRata = HashMap<String, ProRata>()
+    private val proRataPending = HashMap<String, Map<String, JsonObject>>()
+    private val proRataSending = HashSet<String>()
+
+    /** Per-light commands that dim [g] to [target] pro rata, or null when one grouped command will do. */
+    private fun proRataPlan(g: GroupUi, target: Float): Map<String, JsonObject>? {
+        val home = _home.value
+        val members = g.lightIds.mapNotNull { home.light(it) }
+        val levels = members.filter { it.on && it.dimmable }.associate { it.id to it.brightness }
+        val now = SystemClock.elapsedRealtime()
+        synchronized(lock) {
+            val last = proRata[g.id]?.takeIf { c ->
+                now - c.at < PRO_RATA_HOLD_MS && c.sent.keys == levels.keys &&
+                    levels.all { (id, b) -> kotlin.math.abs(b - c.sent.getValue(id)) < 1.5f }
+            }
+            val baseline = last?.baseline ?: levels.takeIf { GroupDimming.differs(it.values) }
+            if (baseline == null) { proRata.remove(g.id); return null }
+            val dimmed = GroupDimming.scale(baseline, target).toMutableMap()
+            // Lights that were off come on as the grouped command would turn them on: dimmable ones at the target.
+            // (Earlier in the same drag they were switched on, so they're no longer off but still follow the target.)
+            val joined = members.filter { !it.on && it.dimmable }.map { it.id } + last?.let { it.sent.keys - it.baseline.keys }.orEmpty()
+            joined.filter { it !in dimmed }.forEach { dimmed[it] = target.coerceIn(1f, 100f) }
+            proRata[g.id] = ProRata(baseline, dimmed, now)
+            return buildMap {
+                dimmed.forEach { (id, b) -> put(id, brightnessBody(b)) }
+                members.filter { !it.on && !it.dimmable }.forEach { put(it.id, onBody(true)) }
+            }
+        }
+    }
+
     fun setGroupXy(groupId: String, xy: Xy) = groupCommand(groupId, xyBody(xy), CT_INACTIVE)
     fun setGroupMirek(groupId: String, mirek: Int) = groupCommand(groupId, mirekBody(mirek), CT_ACTIVE)
 
@@ -1147,6 +1203,8 @@ class HueRepository(
             return snapped.coerceIn(1f, 100f)
         }
         private const val OVERLAY_MS = 1_500L
+        /** How long after a pro-rata dim the next one still counts as the same drag. */
+        private const val PRO_RATA_HOLD_MS = 60_000L
         private val IDENTIFY_BODY = buildJsonObject { putJsonObject("identify") { put("action", "identify") } }
     }
 }

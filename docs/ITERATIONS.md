@@ -11,6 +11,22 @@ The app has two faces:
 
 ---
 
+## v0.15.1 · Room dimming keeps each light's level
+
+**Why:** dimming a room set every light to the same level. A 50% and a 100% light (room at 75%)
+both went to 60% when the room was slid to 60%.
+
+**What changed**
+- When a room's or zone's lights are at different levels, the slider scales each one by the same
+  factor: 50% and 100% at 75% become 40% and 80% at 60%. Applies to the room card, the detail sheet
+  and the widget dimmer.
+- A light that reaches 100% or 1% stops there and the others keep moving, so the room still lands on
+  the chosen level. The levels a drag started from are remembered, so sliding back restores them.
+- Lights at the same level still get one room command, as before. Per-light commands during a drag
+  are paced to stay within the bridge's ~10 commands per second.
+
+---
+
 ## Iteration 12 · v0.15.0 · Dimming from the widget, and a widget that keeps up
 
 **Why:** the widget could only switch things on and off, and it sometimes showed an old state.
